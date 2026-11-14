@@ -263,7 +263,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
       </div>
       <div className="control-guide">
         {mobile ? (
-          <><span>Stick drive</span><span>Drag aim</span><span>FIRE</span><span>MG hold</span><span>AIM zoom</span><span>MAP</span></>
+          <><span>Stick drive</span><span>Drag aim</span><span>FIRE</span><span>MG / Space hold</span><span>AIM zoom</span><span>MAP</span></>
         ) : (
           <><span>W/S drive</span><span>A/D hull</span><span>Mouse turret</span>
           <span>LMB fire</span><span>Space MG</span><span>RMB sniper</span><span>Wheel zoom</span>

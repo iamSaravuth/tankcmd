@@ -353,11 +353,15 @@ export class TankGame {
     this.player.mesh.rotation.order = 'YXZ'
 
     // ---- input ----
-    this._kd = (e) => {
-      this.keys[e.code] = true
-      if (e.code === 'Space') e.preventDefault() // hold Space = coaxial MG
+    // hold Space = coaxial MG (desktop, or a tablet/phone with a keyboard);
+    // swallow it so a focused on-screen button (AIM / MAP) isn't activated
+    const spaceOnly = (e) => {
+      if (e.code !== 'Space' || this.paused || this.over) return // dialogs keep Space for their buttons
+      e.preventDefault()
+      if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur()
     }
-    this._ku = (e) => { this.keys[e.code] = false }
+    this._kd = (e) => { this.keys[e.code] = true; spaceOnly(e) }
+    this._ku = (e) => { this.keys[e.code] = false; spaceOnly(e) }
     this._mm = (e) => {
       if (document.pointerLockElement !== this.renderer.domElement) return
       this.aimTurret(e.movementX, e.movementY)
