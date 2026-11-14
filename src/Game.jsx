@@ -119,8 +119,13 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
       if (e.code === 'KeyM') setShowMap((s) => !s)
       if (e.code !== 'Tab' || e.repeat || game.over || e.target.closest?.('dialog')) return
       e.preventDefault()
-      if (game.paused) { resume(); return }
-      game.keys = {}; game.touchDrive = null; game.mgTouch = false; game.player.zoom = false
+      game.keys = {}; game.touchDrive = null; game.mgTouch = false; game.player.zoom = false; game.player.fireQueued = false
+      if (game.paused) { // same as RESUME
+        setConfirmQuit(false); setShowOptions(false)
+        game.paused = false
+        if (!mobile) game.renderer.domElement.requestPointerLock()?.catch(() => {})
+        return
+      }
       game.paused = true; setConfirmQuit(true)
       document.exitPointerLock?.()
     }
