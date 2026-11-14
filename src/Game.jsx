@@ -121,11 +121,17 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
     // ESC while pointer-locked releases the lock first — treat that as pause too
     // only a lock this canvas actually held counts — unlock events from a previous
     // game instance (e.g. React StrictMode remount) or a refused request must not pause
-    let hadLock = false
+    // the browser can grant and then drop the lock (or blur the window) while the
+    // battle is still loading — that must not open EXIT GAME? on start; the player
+    // just clicks the canvas to lock again
+    const startedAt = performance.now()
+    const starting = () => performance.now() - startedAt < 3000
+    let hadLock = false, lockedAt = 0
     const onLockChange = () => {
-      if (document.pointerLockElement === game.renderer.domElement) { hadLock = true; return }
+      if (document.pointerLockElement === game.renderer.domElement) { hadLock = true; lockedAt = performance.now(); return }
       if (!hadLock) return
       hadLock = false
+      if (starting() || performance.now() - lockedAt < 500) { game.keys = {}; return }
       if (!game.over) {
         game.paused = true
         setConfirmQuit(true)
@@ -139,7 +145,8 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
     }
     const visibility = () => { if (document.hidden) suspend() }
     const rotate = () => { if (mobile && window.innerHeight > window.innerWidth) suspend() }
-    window.addEventListener('blur', suspend)
+    const onBlur = () => { if (starting()) game.keys = {}; else suspend() }
+    window.addEventListener('blur', onBlur)
     document.addEventListener('visibilitychange', visibility)
     window.addEventListener('resize', rotate)
     rotate()
@@ -149,7 +156,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
       cancelAnimationFrame(raf)
       window.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerlockchange', onLockChange)
-      window.removeEventListener('blur', suspend)
+      window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', rotate)
       game.dispose()
