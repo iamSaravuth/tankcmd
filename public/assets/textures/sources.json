@@ -1,0 +1,18 @@
+{
+  "license": "CC0-1.0",
+  "licenseUrl": "https://polyhaven.com/license",
+  "provider": "Poly Haven",
+  "assets": [
+    { "id": "grass_ground", "metadataUrl": "https://api.polyhaven.com/files/grass_ground", "files": ["ground-color.jpg", "ground-normal.jpg"] },
+    { "id": "brown_mud_02", "metadataUrl": "https://api.polyhaven.com/files/brown_mud_02", "files": ["dirt-color.jpg", "dirt-normal.jpg"] },
+    { "id": "rock_boulder_dry", "metadataUrl": "https://api.polyhaven.com/files/rock_boulder_dry", "files": ["rock-color.jpg", "rock-normal.jpg"] },
+    { "id": "bark_brown_02", "metadataUrl": "https://api.polyhaven.com/files/bark_brown_02", "files": ["bark-color.jpg", "bark-normal.jpg"] },
+    { "id": "kloofendal_48d_partly_cloudy_puresky", "metadataUrl": "https://api.polyhaven.com/files/kloofendal_48d_partly_cloudy_puresky", "files": ["sky.hdr"] },
+    { "id": "cracked_concrete_wall", "metadataUrl": "https://api.polyhaven.com/files/cracked_concrete_wall", "files": ["bld_concrete_cracked.jpg"], "processing": "diffuse 1k -> 512px, jpeg q82" },
+    { "id": "concrete_wall_006", "metadataUrl": "https://api.polyhaven.com/files/concrete_wall_006", "files": ["bld_concrete.jpg"], "processing": "diffuse 1k -> 512px, jpeg q82" },
+    { "id": "brick_4", "metadataUrl": "https://api.polyhaven.com/files/brick_4", "files": ["bld_brick.jpg"], "processing": "diffuse 1k -> 512px, jpeg q82" },
+    { "id": "dark_brick_wall", "metadataUrl": "https://api.polyhaven.com/files/dark_brick_wall", "files": ["bld_brick_dark.jpg"], "processing": "diffuse 1k -> 512px, jpeg q82" }
+  ],
+  "processing": { "colorSize": 1024, "normalSize": 512, "jpegQuality": 85, "skyResolution": "1k" },
+  "procedural": ["Pine foliage alpha texture", "Animated water normal texture"]
+}
