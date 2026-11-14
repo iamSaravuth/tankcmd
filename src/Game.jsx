@@ -233,6 +233,11 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
         }}>AIM</button>
         <div className="mobile-toolbar">
           <button onClick={() => setShowMap((s) => !s)} aria-label="Toggle minimap">MAP</button>
+          <button onClick={() => gameRef.current?.resetTurret()} aria-label="Reset turret to front" title="Reset turret">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 12a8 8 0 1 0 2.4-5.7 M4 4v4h4 M12 8v5" />
+            </svg>
+          </button>
           <button onClick={pause} aria-label="Exit game" title="Exit game">
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M10 4H4v16h6 M9 12h12 M17 8l4 4-4 4" />
@@ -274,11 +279,11 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
       </div>
       <div className="control-guide">
         {mobile ? (
-          <><span>Stick drive</span><span>Drag aim</span><span>FIRE</span><span>MG / Space hold</span><span>AIM zoom</span><span>MAP</span></>
+          <><span>Stick drive</span><span>Drag aim</span><span>FIRE</span><span>MG / Space hold</span><span>AIM zoom</span><span>MAP</span><span>↺ turret</span></>
         ) : (
           <><span>W/S drive</span><span>A/D hull</span><span>Mouse turret</span>
           <span>LMB fire</span><span>Space MG</span><span>RMB sniper</span><span>Wheel zoom</span>
-          <span>M map</span><span>ESC menu</span></>
+          <span>R turret front</span><span>M map</span><span>ESC menu</span></>
         )}
         <span className="sep" />
         <span>HP 100</span><span>Ammo ∞</span><span>Reload 5s</span><span>50 km/h</span>

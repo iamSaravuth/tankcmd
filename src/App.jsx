@@ -217,6 +217,7 @@ function StartScreen({ onStart, onHiScores, settings, onSettings }) {
     ['Coaxial MG (Hold)', 'MG Button / Space (keyboard)'],
     ['Sniper Zoom (Toggle)', 'AIM Button'],
     ['Toggle Map', 'MAP Button'],
+    ['Reset Turret to Front', 'Reset Icon ↺'],
     ['Pause / Exit Menu', 'Door Icon'],
   ] : [
     ['Move Forward', 'W'], ['Move Backward', 'S'],
@@ -224,6 +225,7 @@ function StartScreen({ onStart, onHiScores, settings, onSettings }) {
     ['Aim Turret', 'Mouse Movement'], ['Fire Cannon', 'Left Mouse Button'],
     ['Coaxial MG (Hold)', 'Space'],
     ['Sniper Zoom (Hold)', 'Right Mouse Button'], ['Camera Distance', 'Mouse Wheel'],
+    ['Reset Turret to Front', 'R'],
     ['Toggle Map', 'M'], ['Pause / Exit Menu', 'ESC'],
   ]
   return (

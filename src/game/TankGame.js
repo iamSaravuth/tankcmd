@@ -210,6 +210,7 @@ function prepTankModel(proto, tint, targetLen) {
     turNode.traverse((o) => { if (o.isMesh && !gunParts.has(o)) tb.expandByObject(o) })
     const tc = tb.getCenter(new THREE.Vector3())
     wrap.userData.turret = mkPivot(turNode, new THREE.Vector3(tc.x, tb.min.y + (tb.max.y - tb.min.y) * 0.12, tc.z))
+    wrap.userData.turretBase = wrap.userData.turret.rotation.clone()
   }
   // gun elevation pivot at the mantlet (rear of the gun bounding box)
   if (gunNode) {
@@ -364,7 +365,10 @@ export class TankGame {
       e.preventDefault()
       if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur()
     }
-    this._kd = (e) => { this.keys[e.code] = true; spaceOnly(e) }
+    this._kd = (e) => {
+      this.keys[e.code] = true; spaceOnly(e)
+      if (e.code === 'KeyR' && !e.repeat) this.resetTurret()
+    }
     this._ku = (e) => { this.keys[e.code] = false; spaceOnly(e) }
     this._mm = (e) => {
       if (document.pointerLockElement !== this.renderer.domElement) return
@@ -530,6 +534,17 @@ export class TankGame {
     ud.turret.add(fix)
     fix.attach(turNode)
     fix.rotation.y = Math.PI / 2
+  }
+
+  // traverse = base pivot tilt (x/z) + yaw. Rebuild the whole Euler every frame:
+  // copying a saved quaternion back (respawn) re-decomposes it, and past ±90° of
+  // yaw three.js returns the equivalent (x+π, π-y, z+π) form — setting only
+  // .y on that flipped Euler swung the barrel round toward the engine deck
+  setTurretYaw(mesh, yaw) {
+    const tur = mesh.userData.turret, base = mesh.userData.turretBase
+    if (!tur) return
+    if (base) tur.rotation.set(base.x, yaw, base.z, base.order)
+    else tur.rotation.y = yaw
   }
 
   buildTerrain() {
@@ -1231,9 +1246,20 @@ export class TankGame {
     }
   }
 
+  // R / mobile reset button: swing turret + gun back to straight ahead over the hull
+  resetTurret() {
+    if (this.paused || this.over || this.playerDying || this.victory) return
+    this.player.turretReset = true
+    this.player.zoom = false
+  }
+
   aimTurret(dx, dy, touch = false) {
     if (this.paused || this.over) return
     const p = this.player, sensitivity = touch ? 0.0036 : 0.001
+    if (p.turretReset) {
+      if (Math.abs(dx) + Math.abs(dy) < 3) return // ignore jitter while re-centring
+      p.turretReset = false                        // a real aim move takes over
+    }
     p.targetYaw -= dx * sensitivity
     const delta = Math.atan2(Math.sin(p.targetYaw - p.yaw), Math.cos(p.targetYaw - p.yaw))
     p.targetYaw = p.yaw + THREE.MathUtils.clamp(delta, -Math.PI / 3, Math.PI / 3)
@@ -1659,6 +1685,7 @@ export class TankGame {
     p.moving = false
     p.targetYaw = p.yaw
     p.targetPitch = p.pitch
+    p.turretReset = false
     p.respawnShield = 2.5
     p.lastTrack = null
     this.keys = {}; this.touchDrive = null
@@ -1709,8 +1736,10 @@ export class TankGame {
     this.alignGun(p)
     if (this.hitArcs.length) this.hitArcs = this.hitArcs.filter((a) => performance.now() - a.at < 1700)
     p.respawnShield = Math.max(0, (p.respawnShield || 0) - dt)
+    if (p.turretReset) { p.targetYaw = p.hullYaw; p.targetPitch = 0 } // follows the hull if it turns meanwhile
     const yawDelta = Math.atan2(Math.sin(p.targetYaw - p.yaw), Math.cos(p.targetYaw - p.yaw))
-    const aimSpeed = this.mobile ? 1.8 : 1
+    if (p.turretReset && Math.abs(yawDelta) < 0.005 && Math.abs(p.pitch) < 0.005) p.turretReset = false
+    const aimSpeed = (this.mobile ? 1.8 : 1) * (p.turretReset ? 3 : 1)
     p.yaw += THREE.MathUtils.clamp(yawDelta, -0.45 * aimSpeed * dt, 0.45 * aimSpeed * dt)
     p.pitch += THREE.MathUtils.clamp(p.targetPitch - p.pitch, -0.16 * aimSpeed * dt, 0.16 * aimSpeed * dt)
     const prevCd = p.cooldown
@@ -1744,7 +1773,7 @@ export class TankGame {
     // turret tracks the mouse aim relative to hull
     const tur = p.mesh.userData.turret
     if (tur) {
-      tur.rotation.y = p.yaw - p.hullYaw
+      this.setTurretYaw(p.mesh, p.yaw - p.hullYaw)
       if (p.mesh.userData.gun) p.mesh.userData.gun.rotation.x = (p.mesh.userData.gunBase ?? Math.PI / 2) + p.pitch
     }
 
@@ -2325,10 +2354,7 @@ export class TankGame {
     ep.y = groundY(ep.x, ep.z)
     e.mesh.rotation.y = Math.atan2(mx, mz)
 
-    if (e.mesh.userData.turret) {
-      const aim = Math.atan2(pp.x - ep.x, pp.z - ep.z) - e.mesh.rotation.y
-      e.mesh.userData.turret.rotation.y = aim
-    }
+    if (e.mesh.userData.turret) this.setTurretYaw(e.mesh, Math.atan2(pp.x - ep.x, pp.z - ep.z) - e.mesh.rotation.y)
 
     if (dist < this.ai.range && this.player.hp > 0) this.fireEnemy(e, pp)
   }
