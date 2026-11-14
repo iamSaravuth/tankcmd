@@ -13,6 +13,12 @@ const MAX_HP = 100              // equal HP for player & AI
 export const RELOAD_TIME = 5    // seconds — no continuous fire
 const SPEED = 14                // ~50 km/h
 const DMG_PLAYER = 34           // player shell damage vs AI
+// coaxial MG: unlimited ammo, 50 rounds = 1 cannon shell, overheats after a 50-round burst
+const MG_ROUNDS_PER_SHELL = 50
+const MG_DMG = DMG_PLAYER / MG_ROUNDS_PER_SHELL
+const MG_RATE = 10              // rounds / second
+const MG_SPEED = 320
+export const MG_COOL = 4        // seconds of forced cool-down after overheating
 // AI difficulty per map: reload/spread/speed are multipliers, dmg = shell damage vs player, range = firing range (m)
 const AI_LEVELS = {
   forest: { reload: 1.4, spread: 1.6, speed: 0.85, dmg: 15, range: 200 }, // easy
@@ -227,6 +233,8 @@ export class TankGame {
     this.disposed = false
     this.keys = {}
     this.shells = []
+    this.bullets = []
+    this.mgFx = []
     this.explosions = []
     this.flashes = []
     this.muzzleFx = []
@@ -345,7 +353,10 @@ export class TankGame {
     this.player.mesh.rotation.order = 'YXZ'
 
     // ---- input ----
-    this._kd = (e) => { this.keys[e.code] = true }
+    this._kd = (e) => {
+      this.keys[e.code] = true
+      if (e.code === 'Space') e.preventDefault() // hold Space = coaxial MG
+    }
     this._ku = (e) => { this.keys[e.code] = false }
     this._mm = (e) => {
       if (document.pointerLockElement !== this.renderer.domElement) return
@@ -986,26 +997,35 @@ export class TankGame {
     this.scene.add(this.craterMarks)
     this.craterCursor = 0
 
-    // shell impact marks on building walls: soot halo, chipped plaster, dark hole, cracks
+    // shell impact marks on building walls: black soot blast around a dark, jagged hole
     const wc = document.createElement('canvas')
     wc.width = wc.height = 128
     const w = wc.getContext('2d')
-    const soot = w.createRadialGradient(64, 64, 8, 64, 64, 63)
-    soot.addColorStop(0, 'rgba(10,8,6,0.95)'); soot.addColorStop(0.4, 'rgba(18,15,12,0.75)')
-    soot.addColorStop(0.75, 'rgba(25,21,17,0.3)'); soot.addColorStop(1, 'rgba(25,21,17,0)')
+    const soot = w.createRadialGradient(64, 64, 6, 64, 64, 63)
+    soot.addColorStop(0, 'rgba(0,0,0,1)'); soot.addColorStop(0.35, 'rgba(5,4,3,0.9)')
+    soot.addColorStop(0.7, 'rgba(10,8,6,0.45)'); soot.addColorStop(1, 'rgba(10,8,6,0)')
     w.fillStyle = soot; w.fillRect(0, 0, 128, 128)
-    const blob = (r0, jitter, n = 14) => {
+    const blob = (cx, cy, r0, jitter, n = 16) => {
       w.beginPath()
       for (let k = 0; k <= n; k++) {
         const a = (k / n) * Math.PI * 2, r = r0 * (1 - jitter / 2 + Math.random() * jitter)
-        w.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r)
+        w.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
       }
       w.fill()
     }
-    w.fillStyle = 'rgba(150,140,125,0.55)'; blob(26, 0.5)
-    w.fillStyle = 'rgba(60,52,44,0.9)'; blob(17, 0.45)
-    w.fillStyle = 'rgba(6,5,4,1)'; blob(10, 0.4)
-    w.strokeStyle = 'rgba(12,10,8,0.8)'
+    // uneven soot splatter streaking outward
+    for (let k = 0; k < 18; k++) {
+      const a = Math.random() * Math.PI * 2, d = 18 + Math.random() * 30
+      w.fillStyle = `rgba(4,3,2,${0.25 + Math.random() * 0.4})`
+      blob(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 4 + Math.random() * 9, 0.6, 10)
+    }
+    // hole: scorched rim -> shaded wall of the cavity -> black core
+    w.fillStyle = 'rgba(20,16,12,1)'; blob(64, 64, 24, 0.55)
+    const cav = w.createRadialGradient(60, 60, 2, 64, 64, 18)
+    cav.addColorStop(0, 'rgba(0,0,0,1)'); cav.addColorStop(0.6, 'rgba(8,6,5,1)'); cav.addColorStop(1, 'rgba(38,32,26,1)')
+    w.fillStyle = cav; blob(64, 64, 17, 0.5)
+    w.fillStyle = 'rgba(0,0,0,1)'; blob(63, 63, 9, 0.45)
+    w.strokeStyle = 'rgba(0,0,0,0.85)'
     for (let k = 0; k < 9; k++) {
       let a = Math.random() * Math.PI * 2, r = 10, x = 64 + Math.cos(a) * r, y = 64 + Math.sin(a) * r
       w.lineWidth = 1 + Math.random() * 1.5
@@ -1338,6 +1358,136 @@ export class TankGame {
     this.shells.push({ mesh, vel, owner, life: 6, ap })
   }
 
+  // coaxial MG: heat builds 1/50 per round; at full heat the gun locks for MG_COOL seconds
+  updateMG(dt) {
+    const p = this.player
+    p.mgHeat ??= 0
+    p.mgT = Math.max(0, (p.mgT || 0) - dt)
+    const trigger = (this.keys.Space || this.mgTouch) && !this.paused && !this.over && !this.playerDying
+    if (p.mgOver) {
+      p.mgHeat = Math.max(0, p.mgHeat - dt / MG_COOL)
+      if (p.mgHeat === 0) p.mgOver = false
+    } else if (trigger) {
+      while (p.mgT <= 0 && !p.mgOver) {
+        this.fireMG()
+        p.mgT += 1 / MG_RATE
+        p.mgHeat = Math.min(1, p.mgHeat + 1 / MG_ROUNDS_PER_SHELL)
+        if (p.mgHeat >= 1) p.mgOver = true
+      }
+    } else {
+      p.mgHeat = Math.max(0, p.mgHeat - dt * 0.35)
+    }
+  }
+
+  mgMaterial() {
+    return (this._mgMat ??= new THREE.MeshBasicMaterial({ color: 0xffcf6a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }))
+  }
+
+  fireMG() {
+    const p = this.player
+    this.ensureAudio()
+    this.sfx?.mg()
+    const gun = p.mesh.userData.gun
+    const from = gun ? gun.getWorldPosition(new THREE.Vector3()) : p.mesh.position.clone().add(new THREE.Vector3(0, 3.2, 0))
+    const target = (p.zoom ? this.aimPoint : this.gunAimPoint || this.aimPoint)?.clone() || from.clone().addScaledVector(this.aimDir, 500)
+    const dir = target.sub(from).normalize()
+    const side = new THREE.Vector3().crossVectors(dir, this._up ??= new THREE.Vector3(0, 1, 0)).normalize()
+    const sp = 0.008 + p.dispersion * 0.02
+    dir.x += (Math.random() - 0.5) * sp * 2
+    dir.y += (Math.random() - 0.5) * sp
+    dir.z += (Math.random() - 0.5) * sp * 2
+    dir.normalize()
+    // mounted beside the main gun in the mantlet
+    const muzzle = from.addScaledVector(side, 0.9).addScaledVector(dir, 4.5)
+    const m = new THREE.Mesh(this._mgGeo ??= new THREE.BoxGeometry(0.14, 0.14, 3), this.mgMaterial())
+    m.position.copy(muzzle)
+    m.lookAt(muzzle.clone().add(dir))
+    this.scene.add(m)
+    this.bullets.push({ mesh: m, vel: dir.clone().multiplyScalar(MG_SPEED), life: 1.6 })
+    this.mgFxBurst(muzzle, 1, 'flash')
+  }
+
+  // kind: 'spark' (hot fragments), 'dust' (puff), 'flash' (muzzle)
+  mgFxBurst(pos, n, kind) {
+    const geo = kind === 'dust' ? (this._mgDustGeo ??= new THREE.SphereGeometry(0.5, 6, 4))
+      : kind === 'flash' ? (this._mgFlashGeo ??= new THREE.SphereGeometry(0.45, 6, 4))
+      : (this._mgSparkGeo ??= new THREE.BoxGeometry(0.1, 0.1, 0.7))
+    const mat = kind === 'dust' ? (this._mgDustMat ??= new THREE.MeshBasicMaterial({ color: 0x8a8070, transparent: true, opacity: 0.55, depthWrite: false })) : this.mgMaterial()
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(geo, mat)
+      m.position.copy(pos)
+      const v = kind === 'flash' ? new THREE.Vector3()
+        : new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).multiplyScalar(kind === 'dust' ? 4 : 18)
+      if (kind === 'spark') m.lookAt(pos.clone().add(v))
+      this.scene.add(m)
+      this.mgFx.push({ mesh: m, vel: v, t: 0, kind, life: kind === 'dust' ? 0.5 : kind === 'flash' ? 0.06 : 0.18 })
+    }
+  }
+
+  updateMGFx(dt) {
+    for (let i = this.mgFx.length - 1; i >= 0; i--) {
+      const f = this.mgFx[i]
+      f.t += dt
+      f.mesh.position.addScaledVector(f.vel, dt)
+      if (f.kind === 'spark') f.vel.y -= 9 * dt
+      else f.vel.multiplyScalar(0.9)
+      const k = Math.max(0.01, 1 - f.t / f.life)
+      f.mesh.scale.setScalar(f.kind === 'dust' ? (1 + f.t * 6) * k : k)
+      if (f.t >= f.life) { this.scene.remove(f.mesh); this.mgFx.splice(i, 1) }
+    }
+  }
+
+  updateBullets(dt) {
+    const seg = (this._mgSeg ??= new THREE.Line3()), cp = (this._mgCp ??= new THREE.Vector3())
+    for (let i = this.bullets.length - 1; i >= 0; i--) {
+      const b = this.bullets[i]
+      b.life -= dt
+      b.vel.y -= 3 * dt
+      const prev = b.mesh.position.clone()
+      b.mesh.position.addScaledVector(b.vel, dt)
+      const bp = b.mesh.position
+      let hit = b.life <= 0 ? 'gone' : null
+      if (!hit && bp.y <= heightAt(bp.x, bp.z)) { bp.y = heightAt(bp.x, bp.z) + 0.1; hit = 'ground' }
+      if (!hit) {
+        seg.set(prev, bp)
+        for (const e of this.enemies) {
+          if (!e.alive) continue
+          const c = e.mesh.position.clone(); c.y += 2.4
+          seg.closestPointToPoint(c, true, cp)
+          if (cp.distanceTo(c) < e.radius + 0.4) {
+            bp.copy(cp)
+            this.damageEnemy(e, MG_DMG * (this.player.apT > 0 ? 2 : 1), false)
+            hit = 'tank'; break
+          }
+        }
+      }
+      if (!hit && this.theme === 'city') {
+        const w = this.hitBuildingWall(prev, bp)
+        if (w) { bp.copy(w.p).addScaledVector(w.n, 0.2); hit = 'wall' }
+      }
+      if (!hit) {
+        for (const c of this.cars) {
+          if (!c.alive) continue
+          const dx = bp.x - c.x, dz = bp.z - c.z
+          if (dx * dx + dz * dz < (2.4 * CAR_SCALE) ** 2 && bp.y < heightAt(c.x, c.z) + 3 * CAR_SCALE) { hit = 'car'; break }
+        }
+      }
+      if (!hit) {
+        for (const rk of this.rocks) {
+          if (rk.bld) continue
+          const dx = bp.x - rk.x, dz = bp.z - rk.z
+          if (dx * dx + dz * dz < rk.r * rk.r && bp.y < rk.y + rk.r) { hit = 'rock'; break }
+        }
+      }
+      if (hit) {
+        if (hit === 'tank' || hit === 'car') this.mgFxBurst(bp, 5, 'spark')
+        else if (hit !== 'gone') { this.mgFxBurst(bp, 2, 'dust'); this.mgFxBurst(bp, 2, 'spark') }
+        this.scene.remove(b.mesh)
+        this.bullets.splice(i, 1)
+      }
+    }
+  }
+
   explode(pos, big = false) {
     const groundH = heightAt(pos.x, pos.z)
     const scale = big ? 2.6 : 2
@@ -1390,9 +1540,9 @@ export class TankGame {
     this.explosions.push(group)
   }
 
-  damageEnemy(e, dmg) {
+  damageEnemy(e, dmg, countHit = true) {
     e.hp -= dmg
-    this.stats.hits++
+    if (countHit) this.stats.hits++
     if (e.hp <= 0 && e.alive) {
       e.alive = false
       this.kills++
@@ -1450,6 +1600,8 @@ export class TankGame {
     p.mesh.position.copy(saved.position)
     p.hp = MAX_HP
     p.cooldown = 0
+    p.mgHeat = 0
+    p.mgOver = false
     p.zoom = false
     p.dispersion = 0.15
     p.moving = false
@@ -1512,6 +1664,7 @@ export class TankGame {
     const prevCd = p.cooldown
     p.cooldown = Math.max(0, p.cooldown - dt)
     if (prevCd > 0 && p.cooldown === 0) this.sfx?.reload() // breech ready clack
+    this.updateMG(dt)
     const f = this.touchDrive?.forward ?? ((this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0))
     const r = this.touchDrive?.turn ?? ((this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0))
     p.moving = f !== 0 || r !== 0
@@ -1882,10 +2035,61 @@ export class TankGame {
     return null
   }
 
+  // wooden supply crate: planks, frame, diagonal brace, nails + stencilled HP cross / AP mark
+  crateMaterial(type) {
+    this._crateMats ??= {}
+    if (this._crateMats[type]) return this._crateMats[type]
+    const S = 256, cv = document.createElement('canvas')
+    cv.width = cv.height = S
+    const c = cv.getContext('2d')
+    const wood = (x, y, w, h, base) => {
+      c.fillStyle = base; c.fillRect(x, y, w, h)
+      for (let i = 0; i < h / 2; i++) {
+        c.strokeStyle = `rgba(${40 + Math.random() * 30 | 0},${25 + Math.random() * 20 | 0},10,${0.12 + Math.random() * 0.2})`
+        c.lineWidth = 0.6 + Math.random()
+        const yy = y + Math.random() * h
+        c.beginPath(); c.moveTo(x, yy)
+        c.bezierCurveTo(x + w * 0.3, yy + (Math.random() - 0.5) * 4, x + w * 0.7, yy + (Math.random() - 0.5) * 4, x + w, yy + (Math.random() - 0.5) * 3)
+        c.stroke()
+      }
+      c.strokeStyle = 'rgba(25,15,6,0.85)'; c.lineWidth = 2; c.strokeRect(x + 1, y + 1, w - 2, h - 2)
+    }
+    const tones = ['#a07848', '#94703f', '#a9814f', '#8c6939', '#9b7445']
+    const ph = S / 5
+    for (let i = 0; i < 5; i++) wood(0, i * ph, S, ph, tones[i])
+    // diagonal brace
+    c.save(); c.translate(S / 2, S / 2); c.rotate(-Math.PI / 4)
+    wood(-S * 0.72, -16, S * 1.44, 32, '#7e5d33')
+    c.restore()
+    // outer frame
+    const F = 26
+    wood(0, 0, S, F, '#77562f'); wood(0, S - F, S, F, '#77562f')
+    wood(0, F, F, S - 2 * F, '#7a5931'); wood(S - F, F, F, S - 2 * F, '#7a5931')
+    // nails
+    c.fillStyle = '#2a2622'
+    for (const [x, y] of [[13, 13], [S - 13, 13], [13, S - 13], [S - 13, S - 13], [S / 2, 13], [S / 2, S - 13], [13, S / 2], [S - 13, S / 2]]) {
+      c.beginPath(); c.arc(x, y, 3, 0, Math.PI * 2); c.fill()
+    }
+    // stencil mark
+    c.globalAlpha = 0.85
+    if (type === 'hp') {
+      c.fillStyle = '#e8e2d4'; c.beginPath(); c.arc(S / 2, S / 2, 52, 0, Math.PI * 2); c.fill()
+      c.fillStyle = '#c4161c'; c.fillRect(S / 2 - 38, S / 2 - 12, 76, 24); c.fillRect(S / 2 - 12, S / 2 - 38, 24, 76)
+    } else {
+      c.fillStyle = '#e0b021'; c.fillRect(F, S / 2 - 30, S - 2 * F, 60)
+      c.fillStyle = '#1d1a14'; c.font = 'bold 46px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'
+      c.fillText('AP', S / 2, S / 2 + 2)
+    }
+    c.globalAlpha = 1
+    const tex = new THREE.CanvasTexture(cv)
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+    return (this._crateMats[type] = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 }))
+  }
+
   buildDrop(type) {
     const g = new THREE.Group()
-    const crateM = new THREE.MeshStandardMaterial({ color: type === 'hp' ? 0x5a4a2a : 0x3a4a2a, roughness: 0.8 })
-    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.6), crateM)
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.6), this.crateMaterial(type))
     crate.position.y = 0.6
     crate.castShadow = true
     g.add(crate)
@@ -2251,6 +2455,8 @@ export class TankGame {
       }
       for (const e of this.enemies) this.updateEnemy(e, dt)
       this.updateShells(dt)
+      this.updateBullets(dt)
+      this.updateMGFx(dt)
       this.separateTanks()
       if (!this.playerDying) this.updateTrackMarks(this.player)
       for (const e of this.enemies) if (e.alive) this.updateTrackMarks(e)

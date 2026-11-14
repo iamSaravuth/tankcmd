@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { TankGame, RELOAD_TIME } from './game/TankGame'
+import { TankGame, RELOAD_TIME, MG_COOL } from './game/TankGame'
 import Minimap from './components/Minimap'
 
 export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
@@ -7,6 +7,8 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
   const gameRef = useRef(null)
   const reloadFillRef = useRef(null)
   const reloadLabelRef = useRef(null)
+  const mgFillRef = useRef(null)
+  const mgLabelRef = useRef(null)
   const reticleRef = useRef(null)
   const crosshairRef = useRef(null)
   const scopeRef = useRef(null)
@@ -22,7 +24,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
   const aimRef = useRef(null)
   const clearInput = () => {
     const g = gameRef.current
-    if (g) { g.keys = {}; g.touchDrive = null; g.player.zoom = false }
+    if (g) { g.keys = {}; g.touchDrive = null; g.mgTouch = false; g.player.zoom = false }
     if (stickRef.current) stickRef.current.style.transform = ''
     aimRef.current = null
   }
@@ -84,6 +86,12 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
         if (reloadLabelRef.current) {
           reloadLabelRef.current.textContent = frac >= 1 ? 'READY' : `${g.player.cooldown.toFixed(1)}s`
         }
+        if (mgFillRef.current) {
+          const heat = g.player.mgHeat || 0, over = g.player.mgOver
+          mgFillRef.current.style.width = `${heat * 100}%`
+          mgFillRef.current.style.background = over ? '#e04434' : heat > 0.7 ? '#d8a03c' : '#cfd6c8'
+          if (mgLabelRef.current) mgLabelRef.current.textContent = over ? `${(heat * MG_COOL).toFixed(1)}s` : heat > 0.01 ? `${Math.round(heat * 100)}%` : 'READY'
+        }
         if (reticleRef.current) {
           // dispersion ring: 30px tight -> 110px fully bloomed; red while reloading
           const size = 30 + g.player.dispersion * 80
@@ -102,7 +110,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
     const onKey = (e) => {
       if (e.code === 'KeyM') setShowMap((s) => !s)
       if (e.code === 'Escape' && !game.over) {
-        game.keys = {}; game.touchDrive = null; game.player.zoom = false
+        game.keys = {}; game.touchDrive = null; game.mgTouch = false; game.player.zoom = false
         game.paused = true; setConfirmQuit(true)
       }
     }
@@ -120,7 +128,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
       }
     }
     const suspend = () => {
-      game.keys = {}; game.touchDrive = null; game.player.zoom = false
+      game.keys = {}; game.touchDrive = null; game.mgTouch = false; game.player.zoom = false
       aimRef.current = null
       if (stickRef.current) stickRef.current.style.transform = ''
       if (!game.over) { game.paused = true; setConfirmQuit(true) }
@@ -201,6 +209,13 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
           const g = gameRef.current
           if (g && !g.paused && !g.over) g.firePlayer()
         }}>FIRE</button>
+        <button className="touch-zoom touch-mg" aria-label="Hold to fire coaxial machine gun" onPointerDown={(e) => {
+          e.preventDefault()
+          e.currentTarget.setPointerCapture(e.pointerId)
+          if (gameRef.current) gameRef.current.mgTouch = true
+        }} onPointerUp={() => { if (gameRef.current) gameRef.current.mgTouch = false }}
+          onPointerCancel={() => { if (gameRef.current) gameRef.current.mgTouch = false }}
+          onLostPointerCapture={() => { if (gameRef.current) gameRef.current.mgTouch = false }}>MG</button>
         <button ref={zoomButtonRef} className="touch-zoom" aria-label="Toggle sniper zoom" aria-pressed="false" onClick={() => {
           const g = gameRef.current
           if (g && !g.paused && !g.over) g.player.zoom = !g.player.zoom
@@ -241,12 +256,17 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
         <div className="reload-track"><div ref={reloadFillRef} className="reload-fill" /></div>
         <span ref={reloadLabelRef} className="reload-label">READY</span>
       </div>
+      <div className="reload-wrap mg-wrap">
+        <span className="hud-label">MG</span>
+        <div className="reload-track"><div ref={mgFillRef} className="reload-fill" style={{ width: 0 }} /></div>
+        <span ref={mgLabelRef} className="reload-label">READY</span>
+      </div>
       <div className="control-guide">
         {mobile ? (
-          <><span>Stick drive</span><span>Drag aim</span><span>FIRE</span><span>AIM zoom</span><span>MAP</span></>
+          <><span>Stick drive</span><span>Drag aim</span><span>FIRE</span><span>MG hold</span><span>AIM zoom</span><span>MAP</span></>
         ) : (
           <><span>W/S drive</span><span>A/D hull</span><span>Mouse turret</span>
-          <span>LMB fire</span><span>RMB sniper</span><span>Wheel zoom</span>
+          <span>LMB fire</span><span>Space MG</span><span>RMB sniper</span><span>Wheel zoom</span>
           <span>M map</span><span>ESC menu</span></>
         )}
         <span className="sep" />

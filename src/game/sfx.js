@@ -115,6 +115,35 @@ export class SoundFX {
     o.start(t); o.stop(t + 0.9)
   }
 
+  // coaxial MG round: short sharp crack
+  mg() {
+    const t = this.ctx.currentTime
+    if (!this._mgNoise) {
+      const n = (this.ctx.sampleRate * 0.07) | 0
+      this._mgNoise = this.ctx.createBuffer(1, n, this.ctx.sampleRate)
+      const d = this._mgNoise.getChannelData(0)
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
+    }
+    const nz = this.ctx.createBufferSource()
+    nz.buffer = this._mgNoise
+    const nf = this.ctx.createBiquadFilter()
+    nf.type = 'bandpass'; nf.frequency.value = 1400 + Math.random() * 400; nf.Q.value = 0.8
+    const ng = this.ctx.createGain()
+    ng.gain.setValueAtTime(0.55, t)
+    ng.gain.exponentialRampToValueAtTime(0.01, t + 0.07)
+    nz.connect(nf).connect(ng).connect(this.fx)
+    nz.start(t)
+    const o = this.ctx.createOscillator()
+    o.type = 'square'
+    o.frequency.setValueAtTime(180, t)
+    o.frequency.exponentialRampToValueAtTime(60, t + 0.05)
+    const og = this.ctx.createGain()
+    og.gain.setValueAtTime(0.22, t)
+    og.gain.exponentialRampToValueAtTime(0.01, t + 0.05)
+    o.connect(og).connect(this.fx)
+    o.start(t); o.stop(t + 0.06)
+  }
+
   // shell hits ground/rock: dull thud + debris
   impact() {
     if (this._playBuf('impact', 0.7)) return

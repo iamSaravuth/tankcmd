@@ -214,6 +214,7 @@ function StartScreen({ onStart, onHiScores, settings, onSettings }) {
     ['Turn Hull', 'Left Joystick Left / Right'],
     ['Aim Turret', 'Drag on Right Side'],
     ['Fire Cannon', 'FIRE Button'],
+    ['Coaxial MG (Hold)', 'MG Button'],
     ['Sniper Zoom (Toggle)', 'AIM Button'],
     ['Toggle Map', 'MAP Button'],
     ['Pause / Exit Menu', 'Door Icon'],
@@ -221,6 +222,7 @@ function StartScreen({ onStart, onHiScores, settings, onSettings }) {
     ['Move Forward', 'W'], ['Move Backward', 'S'],
     ['Turn Hull Left', 'A'], ['Turn Hull Right', 'D'],
     ['Aim Turret', 'Mouse Movement'], ['Fire Cannon', 'Left Mouse Button'],
+    ['Coaxial MG (Hold)', 'Space'],
     ['Sniper Zoom (Hold)', 'Right Mouse Button'], ['Camera Distance', 'Mouse Wheel'],
     ['Toggle Map', 'M'], ['Pause / Exit Menu', 'ESC'],
   ]
