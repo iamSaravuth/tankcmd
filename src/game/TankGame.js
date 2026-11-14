@@ -833,28 +833,25 @@ export class TankGame {
       this.scene.add(strip)
     }
 
-    // one building: body + jagged cap + window strips (no loose rubble — the city has no rocks)
+    // one building: body + jagged cap + window strips (no loose rubble — the city has no rocks).
+    // geometry is collected per material and merged after the grid is built: one mesh per
+    // building part meant ~4800 draw calls a frame, which dropped the frame rate in the city
+    const bodyGeos = mats.map(() => []), capGeos = [], winGeos = []
+    const place = new THREE.Object3D()
     const mkBuilding = (x, z, w, d, h, ruined) => {
-      const bld = new THREE.Group()
-      const mat = mats[(Math.random() * mats.length) | 0]
-      const body = new THREE.Mesh(boxUV(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), mat.userData.tile), mat)
-      body.castShadow = body.receiveShadow = true
-      bld.add(body)
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(w * 0.72, ruined ? 3 : 1.6, d * 0.72), dark)
-      cap.position.set(w * 0.08, h + (ruined ? -0.5 : 0.4), -d * 0.07)
-      cap.rotation.set(0.1 + Math.random() * (ruined ? 0.35 : 0.08), Math.random() * 0.4, 0.09 + Math.random() * (ruined ? 0.35 : 0.08))
-      bld.add(cap)
+      const mi = (Math.random() * mats.length) | 0
+      const y = heightAt(x, z)
+      bodyGeos[mi].push(boxUV(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), mats[mi].userData.tile).translate(x, y - 0.3, z))
+      place.position.set(w * 0.08, h + (ruined ? -0.5 : 0.4), -d * 0.07)
+      place.rotation.set(0.1 + Math.random() * (ruined ? 0.35 : 0.08), Math.random() * 0.4, 0.09 + Math.random() * (ruined ? 0.35 : 0.08))
+      place.updateMatrix()
+      capGeos.push(new THREE.BoxGeometry(w * 0.72, ruined ? 3 : 1.6, d * 0.72).applyMatrix4(place.matrix).translate(x, y - 0.3, z))
       const rows = Math.max(1, Math.floor(h / 3.5))
       for (let r = 0; r < rows; r++) {
         for (const side of [-1, 1]) {
-          const win = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.6, d * 0.8), winMat)
-          win.position.set(side * (w / 2), 3 + r * 3.4, 0)
-          bld.add(win)
+          winGeos.push(new THREE.BoxGeometry(0.3, 1.6, d * 0.8).translate(x + side * (w / 2), y - 0.3 + 3 + r * 3.4, z))
         }
       }
-      const y = heightAt(x, z)
-      bld.position.set(x, y - 0.3, z)
-      this.scene.add(bld)
       this.buildings.push({ x, z, w, d, y: y - 0.3, h })
       // bld: shells use the exact box (hitBuildingWall); tanks still collide with this circle
       this.rocks.push({ x, z, y, r: Math.max(w, d) * 0.62, bld: true })
@@ -882,7 +879,16 @@ export class TankGame {
           }
         }
       }
+    }    const addMerged = (geos, mat, shadows) => {
+      if (!geos.length) return
+      const mesh = new THREE.Mesh(mergeGeometries(geos), mat)
+      for (const g of geos) g.dispose()
+      mesh.castShadow = mesh.receiveShadow = shadows
+      this.scene.add(mesh)
     }
+    bodyGeos.forEach((geos, i) => addMerged(geos, mats[i], true))
+    addMerged(capGeos, dark, false)
+    addMerged(winGeos, winMat, false)
   }
 
   buildLandmarks() {
@@ -1929,8 +1935,14 @@ export class TankGame {
 
   // --- smoke puffs from damaged / wrecked tanks ---
   puffSmoke(pos, big) {
+    // shared puff geometry: smoke is emitted constantly (city fires) and must not allocate GPU buffers per puff
+    const geos = (this._smokeGeos ??= [0.8, 1.4].map((r) => {
+      const g = new THREE.SphereGeometry(r, 8, 8)
+      g.userData.shared = true
+      return g
+    }))
     const m = new THREE.Mesh(
-      new THREE.SphereGeometry(big ? 1.4 : 0.8, 8, 8),
+      geos[big ? 1 : 0],
       new THREE.MeshBasicMaterial({ color: big ? 0x1c1c1c : 0x3a3a3a, transparent: true, opacity: 0.55 })
     )
     m.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2))
@@ -1951,9 +1963,11 @@ export class TankGame {
       for (const e of this.enemies) if (e.alive) emit(e)
       for (const wr of this.wrecks) if (wr.t < 5) this.puffSmoke(wr.hullPos, true)
       // persistent fire spots: burning buildings & wrecked cars
+      const pp = this.player.mesh.position
       for (const fs of this.fireSpots) {
         fs.t += 0.09
-        if (fs.t < fs.dur) this.puffSmoke(new THREE.Vector3(fs.x, fs.y, fs.z), Math.random() < 0.4)
+        // only fires near the player smoke: the city has ~60 burning buildings
+        if (fs.t < fs.dur && (fs.x - pp.x) ** 2 + (fs.z - pp.z) ** 2 < 350 * 350) this.puffSmoke(new THREE.Vector3(fs.x, fs.y, fs.z), Math.random() < 0.4)
       }
     }
     for (let i = this.smokes.length - 1; i >= 0; i--) {
@@ -1963,7 +1977,12 @@ export class TankGame {
       if (s.vel) { s.mesh.position.addScaledVector(s.vel, dt); s.vel.multiplyScalar(1 - dt * 2.5) }
       s.mesh.scale.multiplyScalar(1 + dt * 1.2)
       s.mesh.material.opacity = Math.max(0, (s.o0 ?? 0.55) - s.t * (s.rate ?? 0.5))
-      if (s.t > 1.4) { this.scene.remove(s.mesh); this.smokes.splice(i, 1) }
+      if (s.t > 1.4) {
+        this.scene.remove(s.mesh)
+        s.mesh.material.dispose()
+        if (!s.mesh.geometry.userData.shared) s.mesh.geometry.dispose()
+        this.smokes.splice(i, 1)
+      }
     }
     // falling snow: flakes drift down inside a cloud that follows the player
     if (this.snowPts) {
