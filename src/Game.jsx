@@ -102,6 +102,10 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
         const at = (o) => `translate(-50%,-50%) translate(${o?.x ?? 0}px, ${o?.y ?? 0}px)`
         if (reticleRef.current) reticleRef.current.style.transform = at(g.reticleOffset)
         if (crosshairRef.current) crosshairRef.current.style.transform = at(g.crosshairOffset)
+        // last-kill hold shot: clean frame, no aiming marks
+        const vis = g.victory ? 'hidden' : ''
+        if (reticleRef.current) reticleRef.current.style.visibility = vis
+        if (crosshairRef.current) crosshairRef.current.style.visibility = vis
       }
       raf = requestAnimationFrame(tick)
     }

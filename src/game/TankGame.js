@@ -19,6 +19,10 @@ const MG_DMG = DMG_PLAYER / MG_ROUNDS_PER_SHELL
 const MG_RATE = 10              // rounds / second
 const MG_SPEED = 320
 export const MG_COOL = 4        // seconds of forced cool-down after overheating
+// last kill: hold a slightly elevated shot of the final wreck before the win screen
+const VICTORY_HOLD = 10         // seconds
+const VICTORY_DIST = 24
+const VICTORY_HEIGHT = 9
 // AI difficulty per map: reload/spread/speed are multipliers, dmg = shell damage vs player, range = firing range (m)
 const AI_LEVELS = {
   forest: { reload: 1.4, spread: 1.6, speed: 0.85, dmg: 15, range: 200 }, // easy
@@ -1313,7 +1317,7 @@ export class TankGame {
 
   firePlayer() {
     const p = this.player
-    if (this.paused || this.over || this.playerDying || p.cooldown > 0) return
+    if (this.paused || this.over || this.playerDying || this.victory || p.cooldown > 0) return
     this.ensureAudio()
     p.cooldown = RELOAD_TIME
     this.sfx?.fire()
@@ -1552,12 +1556,56 @@ export class TankGame {
       this.kills++
       this.tankExplode(e.mesh)   // turret pops off, hull becomes charred wreck
       this.emitHud()
-      if (this.enemies.every((x) => !x.alive)) this.finish(true)
+      if (this.enemies.every((x) => !x.alive)) this.startVictory(e)
     }
   }
 
+  startVictory(e) {
+    if (this.victory || this.over) return
+    const time = Math.round((performance.now() - this.stats.start) / 1000)
+    const focus = e.mesh.position.clone().add(new THREE.Vector3(0, 2, 0))
+    const back = this.camera.position.clone().sub(focus).setY(0)
+    if (back.lengthSq() < 1) back.set(0, 0, -1)
+    back.normalize()
+    // city: pick the first bearing (nearest to the current view) with no building in the way
+    const blocked = (a, b) => {
+      if (this.theme !== 'city') return false
+      let prev = a
+      for (let i = 1; i <= 12; i++) {
+        const cur = a.clone().lerp(b, i / 12)
+        if (this.hitBuildingWall(prev, cur)) return true
+        prev = cur
+      }
+      return false
+    }
+    const up = (this._up ??= new THREE.Vector3(0, 1, 0))
+    let camPos = null
+    for (let k = 0; k < 8 && !camPos; k++) {
+      const d = back.clone().applyAxisAngle(up, (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 4))
+      const c = focus.clone().addScaledVector(d, VICTORY_DIST).add(new THREE.Vector3(0, VICTORY_HEIGHT, 0))
+      c.y = Math.max(c.y, heightAt(c.x, c.z) + 3)
+      if (!blocked(focus, c)) camPos = c
+    }
+    camPos ??= focus.clone().addScaledVector(back, 10).add(new THREE.Vector3(0, 34, 0)) // over the rooftops
+    this.player.zoom = false
+    this.player.mesh.visible = true
+    this.keys = {}; this.touchDrive = null; this.mgTouch = false
+    this.victory = { t: 0, focus, camPos, time }
+  }
+
+  updateVictory(dt) {
+    const v = this.victory
+    v.t += dt
+    this.camera.position.lerp(v.camPos, 1 - Math.exp(-2.5 * dt))
+    this.cameraLookTarget.lerp(v.focus, 1 - Math.exp(-4 * dt))
+    this.camera.fov = THREE.MathUtils.damp(this.camera.fov, 50, 3, dt)
+    this.camera.updateProjectionMatrix()
+    this.camera.lookAt(this.cameraLookTarget)
+    if (v.t >= VICTORY_HOLD) this.finish(true)
+  }
+
   damagePlayer(dmg, fromDir) {
-    if (this.over || this.playerDying || this.player.respawnShield > 0) return
+    if (this.over || this.playerDying || this.victory || this.player.respawnShield > 0) return
     this.player.hp = Math.max(0, this.player.hp - dmg)
     // attack-direction indicator: bearing to the attacker relative to the
     // aim direction — rel 0 = ahead, +90 = right, 180 = behind
@@ -1627,7 +1675,7 @@ export class TankGame {
     if (this.over) return
     this.over = true
     document.exitPointerLock?.()
-    const time = Math.round((performance.now() - this.stats.start) / 1000)
+    const time = this.victory?.time ?? Math.round((performance.now() - this.stats.start) / 1000)
     this.onEnd(win
       ? { win: true, stats: { time, shots: this.stats.shots, hits: this.stats.hits, accuracy: this.stats.shots ? Math.round((this.stats.hits / this.stats.shots) * 100) : 0, hp: this.player.hp, map: this.theme } }
       : { win: false })
@@ -2449,11 +2497,13 @@ export class TankGame {
   loop() {
     this.raf = requestAnimationFrame(this.loop)
     const dt = Math.min(this.clock.getDelta(), 0.05)
-    if (this.paused || this.over || this.playerDying) this.sfx?.setEngine(false)
+    if (this.paused || this.over || this.playerDying || this.victory) this.sfx?.setEngine(false)
     if (!this.over && !this.paused) {
       if (this.playerDying) {
         this.deathT += dt
         if (this.deathT > 2.8) this.finish(false)
+      } else if (this.victory) {
+        this.updateVictory(dt)
       } else if (this.player.hp > 0) {
         this.updatePlayer(dt)
       }
