@@ -1609,7 +1609,7 @@ export class TankGame {
     if (e.hp <= 0 && e.alive) {
       e.alive = false
       this.kills++
-      this.tankExplode(e.mesh)   // turret pops off, hull becomes charred wreck
+      this.tankExplode(e.mesh)   // tank becomes a charred wreck
       this.emitHud()
       if (this.enemies.every((x) => !x.alive)) this.startVictory(e)
     }
@@ -2065,22 +2065,12 @@ export class TankGame {
     }
   }
 
-  // --- destruction: turret pops off, spins, slams into the ground ---
+  // --- destruction: hull and turret stay together as a charred wreck ---
   tankExplode(mesh) {
     this.sfx?.explode()
     this.explode(mesh.position.clone().add(new THREE.Vector3(0, 3, 0)), true)
     this.addCrater(mesh.position.x, mesh.position.z, 7, 1.2)
-    const turret = mesh.userData.turret
-    if (turret) {
-      mesh.updateMatrixWorld(true)
-      this.scene.attach(turret)
-      this.wrecks.push({
-        obj: turret, hullPos: mesh.position.clone(), t: 0,
-        vel: new THREE.Vector3((Math.random() - 0.5) * 14, 16 + Math.random() * 6, (Math.random() - 0.5) * 14),
-        av: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3),
-        landed: false,
-      })
-    }
+    this.wrecks.push({ obj: null, hullPos: mesh.position.clone(), t: 0, landed: true })
     // char the hull black — it stays as a burnt wreck
     mesh.traverse((o) => {
       if (o.isMesh) {
