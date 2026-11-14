@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { TankGame, RELOAD_TIME, MG_COOL } from './game/TankGame'
 import Minimap from './components/Minimap'
+import OptionsDialog from './components/OptionsDialog'
 
-export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
+export default function Game({ onEnd, onExit, resumeCount, inactive, map, settings, onSettings, playClick }) {
   const mountRef = useRef(null)
   const gameRef = useRef(null)
   const reloadFillRef = useRef(null)
@@ -16,6 +17,8 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
   const [hud, setHud] = useState({ hp: 100, maxHp: 100, kills: 0, total: 3 })
   const [showMap, setShowMap] = useState(false)
   const [confirmQuit, setConfirmQuit] = useState(false)
+  const [showOptions, setShowOptions] = useState(false)
+  const optionsButtonRef = useRef(null)
   const [arcs, setArcs] = useState([])
   const seenArcs = useRef(new Set())
 
@@ -24,7 +27,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
   const aimRef = useRef(null)
   const clearInput = () => {
     const g = gameRef.current
-    if (g) { g.keys = {}; g.touchDrive = null; g.mgTouch = false; g.player.zoom = false }
+    if (g) { g.keys = {}; g.touchDrive = null; g.mgTouch = false; g.player.zoom = false; g.player.fireQueued = false }
     if (stickRef.current) stickRef.current.style.transform = ''
     aimRef.current = null
   }
@@ -111,32 +114,22 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
     }
     raf = requestAnimationFrame(tick)
 
+    // Tab toggles the EXIT GAME? menu (inside the Options dialog Tab keeps moving focus)
     const onKey = (e) => {
       if (e.code === 'KeyM') setShowMap((s) => !s)
-      if (e.code === 'Escape' && !game.over) {
-        game.keys = {}; game.touchDrive = null; game.mgTouch = false; game.player.zoom = false
-        game.paused = true; setConfirmQuit(true)
-      }
+      if (e.code !== 'Tab' || e.repeat || game.over || e.target.closest?.('dialog')) return
+      e.preventDefault()
+      if (game.paused) { resume(); return }
+      game.keys = {}; game.touchDrive = null; game.mgTouch = false; game.player.zoom = false
+      game.paused = true; setConfirmQuit(true)
+      document.exitPointerLock?.()
     }
-    // ESC while pointer-locked releases the lock first — treat that as pause too
-    // only a lock this canvas actually held counts — unlock events from a previous
-    // game instance (e.g. React StrictMode remount) or a refused request must not pause
-    // the browser can grant and then drop the lock (or blur the window) while the
-    // battle is still loading — that must not open EXIT GAME? on start; the player
-    // just clicks the canvas to lock again
+    // the browser always releases the pointer lock on ESC (that can't be overridden);
+    // losing the lock no longer pauses — the game keeps running, the turret follows the
+    // free cursor over the canvas and the next click re-locks. Blur while the battle is
+    // still loading must not open EXIT GAME? either
     const startedAt = performance.now()
     const starting = () => performance.now() - startedAt < 3000
-    let hadLock = false, lockedAt = 0
-    const onLockChange = () => {
-      if (document.pointerLockElement === game.renderer.domElement) { hadLock = true; lockedAt = performance.now(); return }
-      if (!hadLock) return
-      hadLock = false
-      if (starting() || performance.now() - lockedAt < 500) { game.keys = {}; return }
-      if (!game.over) {
-        game.paused = true
-        setConfirmQuit(true)
-      }
-    }
     const suspend = () => {
       game.keys = {}; game.touchDrive = null; game.mgTouch = false; game.player.zoom = false
       aimRef.current = null
@@ -151,11 +144,9 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
     window.addEventListener('resize', rotate)
     rotate()
     window.addEventListener('keydown', onKey)
-    document.addEventListener('pointerlockchange', onLockChange)
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('keydown', onKey)
-      document.removeEventListener('pointerlockchange', onLockChange)
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', rotate)
@@ -172,8 +163,12 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
     }
   }, [resumeCount])
 
+  // volume sliders in the pause Options take effect on the running battle
+  useEffect(() => { if (settings) gameRef.current?.applySettings(settings) }, [settings])
+
   const resume = () => {
     setConfirmQuit(false)
+    setShowOptions(false)
     const g = gameRef.current
     if (g) {
       clearInput()
@@ -283,7 +278,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
         ) : (
           <><span>W/S drive</span><span>A/D hull</span><span>Mouse turret</span>
           <span>LMB fire</span><span>Space MG</span><span>RMB sniper</span><span>Wheel zoom</span>
-          <span>R turret front</span><span>M map</span><span>ESC menu</span></>
+          <span>R turret front</span><span>M map</span><span>Tab menu</span></>
         )}
         <span className="sep" />
         <span>HP 100</span><span>Ammo ∞</span><span>Reload 5s</span><span>50 km/h</span>
@@ -291,15 +286,20 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map }) {
       {showMap && <Minimap game={gameRef} onClose={() => setShowMap(false)} />}
       {confirmQuit && (
         <div className="quit-overlay">
-          <div className="quit-box">
+          <div className="quit-box" hidden={showOptions}>
             <h2>EXIT GAME?</h2>
             <p>Return to main menu?</p>
             <div className="row">
               <button className="btn" onClick={resume}>RESUME</button>
+              <button ref={optionsButtonRef} className="btn ghost" onClick={() => { playClick?.(); setShowOptions(true) }}>OPTIONS</button>
               <button className="btn ghost" onClick={onExit}>EXIT TO MENU</button>
             </div>
           </div>
         </div>
+      )}
+      {confirmQuit && settings && (
+        <OptionsDialog open={showOptions} settings={settings} onSettings={onSettings} playClick={playClick ?? (() => {})}
+          onClose={() => { if (showOptions) { setShowOptions(false); setTimeout(() => optionsButtonRef.current?.focus()) } }} />
       )}
       {!mobile && <div className="lock-hint">Click the screen to lock mouse control</div>}
     </div>

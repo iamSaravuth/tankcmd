@@ -411,7 +411,8 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 .hud-label, .hud-box.hint, .reload-label, .control-guide span, .lock-hint, .quit-box p, .stat span { color: #d4d2d0; }
 .hp-track, .reload-track { border-radius: 0; border-color: #97989c; background: #101319; }
 .quit-box h2 { color: #f0c6ad; }
-.quit-box .row { gap: 22px; }
+.quit-box .row { flex-direction: column; align-items: stretch; gap: 14px; }
+.mobile-game .quit-box .row { gap: 10px; }
 .quit-box .btn { font-size: 19.8px; padding: 12px 36px; }
 .mobile-game .quit-box .btn { min-height: 44px; padding: 10px 16px; }
 .minimap-overlay { padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); gap: 8px; }

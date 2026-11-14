@@ -19,6 +19,13 @@ const MG_DMG = DMG_PLAYER / MG_ROUNDS_PER_SHELL
 const MG_RATE = 10              // rounds / second
 const MG_SPEED = 320
 export const MG_COOL = 4        // seconds of forced cool-down after overheating
+// player aiming (WoT-style: the view orbits freely 360°, the turret slews after it
+// the short way round): traverse / elevation speed (rad/s), elevation limits
+// (+ = barrel down), mouse / touch sensitivity (rad per px at 100%), fire buffer (s)
+const TRAVERSE = 1.6, ELEVATE = 0.6
+const PITCH_UP = -0.5, PITCH_DOWN = 0.3
+const MOUSE_SENS = 0.0022, TOUCH_SENS = 0.0045
+const FIRE_BUFFER = 0.5
 // last kill: hold a slightly elevated shot of the final wreck before the win screen
 const VICTORY_HOLD = 10         // seconds
 const VICTORY_DIST = 24
@@ -371,8 +378,11 @@ export class TankGame {
     }
     this._ku = (e) => { this.keys[e.code] = false; spaceOnly(e) }
     this._mm = (e) => {
-      if (document.pointerLockElement !== this.renderer.domElement) return
-      this.aimTurret(e.movementX, e.movementY)
+      // no lock yet (browser refused, or still cooling down after ESC): aim with
+      // the free cursor while it is over the canvas instead of freezing the turret
+      if (document.pointerLockElement !== this.renderer.domElement && (this.mobile || e.target !== this.renderer.domElement)) return
+      const lim = 120 // Chrome on Windows sometimes reports one huge jump when the lock engages
+      this.aimTurret(THREE.MathUtils.clamp(e.movementX, -lim, lim), THREE.MathUtils.clamp(e.movementY, -lim, lim))
     }
     this._md = (e) => {
       if (this.paused || this.over) return
@@ -382,9 +392,13 @@ export class TankGame {
       if (e.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches) return
       if (this.paused || this.over) return   // pause menu / end screens own the mouse
       if (document.pointerLockElement !== this.renderer.domElement) {
-        // only re-lock when the canvas itself is clicked — not UI (e.g. quit dialog)
-        if (e.target === this.renderer.domElement) this.renderer.domElement.requestPointerLock()
-        else if (e.button === 0 && this.player.zoom) this.firePlayer() // scoped clicks still fire
+        // only re-lock when the canvas itself is clicked — not UI (e.g. quit dialog);
+        // the same click still fires / scopes so no shot is lost to re-locking
+        if (e.target === this.renderer.domElement) {
+          this.renderer.domElement.requestPointerLock()?.catch?.(() => {})
+        } else if (!(e.button === 0 && this.player.zoom)) return
+        if (e.button === 0) this.firePlayer()
+        if (e.button === 2) this.player.zoom = true
         return
       }
       if (e.button === 0) this.firePlayer()
@@ -1236,6 +1250,13 @@ export class TankGame {
     })
   }
 
+  // live volume changes from the pause menu (graphics quality still applies next battle)
+  applySettings(s) {
+    this.settings = { ...this.settings, ...s }
+    this.sfx?.setVolumes({ master: s.master / 100, effects: s.effects / 100, music: s.music / 100 })
+    if (this.bgm) this.bgm.volume = 0.4 * channelVolume(this.settings, 'music')
+  }
+
   ensureAudio() {
     if (this.sfx.ctx.state === 'suspended') this.sfx.ctx.resume().catch(() => {})
     if (!this.bgm) {
@@ -1255,15 +1276,20 @@ export class TankGame {
 
   aimTurret(dx, dy, touch = false) {
     if (this.paused || this.over) return
-    const p = this.player, sensitivity = touch ? 0.0036 : 0.001
+    const p = this.player
+    const sensitivity = (touch ? TOUCH_SENS : MOUSE_SENS) * (this.settings?.sensitivity ?? 100) / 100
+    const ySign = this.settings?.invertY ? -1 : 1
     if (p.turretReset) {
       if (Math.abs(dx) + Math.abs(dy) < 3) return // ignore jitter while re-centring
       p.turretReset = false                        // a real aim move takes over
     }
     p.targetYaw -= dx * sensitivity
     const delta = Math.atan2(Math.sin(p.targetYaw - p.yaw), Math.cos(p.targetYaw - p.yaw))
-    p.targetYaw = p.yaw + THREE.MathUtils.clamp(delta, -Math.PI / 3, Math.PI / 3)
-    p.targetPitch = THREE.MathUtils.clamp(p.targetPitch - dy * sensitivity, -0.5, 0.15)
+    // no lead cap: the view never stops mid-swing; re-basing within ±π of the turret
+    // makes it traverse the short way (aim behind = turret swings round the near side)
+    p.targetYaw = p.yaw + delta
+    // +pitch = barrel down; mouse/finger down → aim down (Invert Y flips it)
+    p.targetPitch = THREE.MathUtils.clamp(p.targetPitch + dy * sensitivity * ySign, PITCH_UP, PITCH_DOWN)
   }
 
   // world-space muzzle tip position: gun pivot + a barrel's length along the
@@ -1343,7 +1369,10 @@ export class TankGame {
 
   firePlayer() {
     const p = this.player
-    if (this.paused || this.over || this.playerDying || this.victory || p.cooldown > 0) return
+    if (this.paused || this.over || this.playerDying || this.victory) return
+    // a click just before the breech is ready is kept and fires the moment it is
+    if (p.cooldown > 0) { if (p.cooldown <= FIRE_BUFFER) p.fireQueued = true; return }
+    p.fireQueued = false
     this.ensureAudio()
     p.cooldown = RELOAD_TIME
     this.sfx?.fire()
@@ -1686,6 +1715,7 @@ export class TankGame {
     p.targetYaw = p.yaw
     p.targetPitch = p.pitch
     p.turretReset = false
+    p.fireQueued = false
     p.respawnShield = 2.5
     p.lastTrack = null
     this.keys = {}; this.touchDrive = null
@@ -1739,12 +1769,13 @@ export class TankGame {
     if (p.turretReset) { p.targetYaw = p.hullYaw; p.targetPitch = 0 } // follows the hull if it turns meanwhile
     const yawDelta = Math.atan2(Math.sin(p.targetYaw - p.yaw), Math.cos(p.targetYaw - p.yaw))
     if (p.turretReset && Math.abs(yawDelta) < 0.005 && Math.abs(p.pitch) < 0.005) p.turretReset = false
-    const aimSpeed = (this.mobile ? 1.8 : 1) * (p.turretReset ? 3 : 1)
-    p.yaw += THREE.MathUtils.clamp(yawDelta, -0.45 * aimSpeed * dt, 0.45 * aimSpeed * dt)
-    p.pitch += THREE.MathUtils.clamp(p.targetPitch - p.pitch, -0.16 * aimSpeed * dt, 0.16 * aimSpeed * dt)
+    const aimSpeed = (this.mobile ? 1.2 : 1) * (p.turretReset ? 2 : 1)
+    p.yaw += THREE.MathUtils.clamp(yawDelta, -TRAVERSE * aimSpeed * dt, TRAVERSE * aimSpeed * dt)
+    p.pitch += THREE.MathUtils.clamp(p.targetPitch - p.pitch, -ELEVATE * aimSpeed * dt, ELEVATE * aimSpeed * dt)
     const prevCd = p.cooldown
     p.cooldown = Math.max(0, p.cooldown - dt)
     if (prevCd > 0 && p.cooldown === 0) this.sfx?.reload() // breech ready clack
+    if (p.fireQueued && p.cooldown === 0) this.firePlayer()
     this.updateMG(dt)
     const f = this.touchDrive?.forward ?? ((this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0))
     const r = this.touchDrive?.turn ?? ((this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0))

@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react'
 import introUrl from './assets/intro.mp3'
 import clickUrl from './assets/click.mp3'
 import ContinueStars from './components/ContinueStars'
-import { loadSettings, saveSettings, channelVolume, GRAPHICS } from './settings'
+import OptionsDialog from './components/OptionsDialog'
+import { loadSettings, saveSettings, channelVolume } from './settings'
 import { loadAll, standing, addScore, qualifies, lastName, calcScore, formatTime, NAME_MAX, MAX_SCORES } from './hiscores'
 import { trackPlay } from './analytics'
 import './App.css'
@@ -10,9 +11,6 @@ import './App.css'
 // UI click sound — cloned per press so rapid clicks overlap
 const clickAudio = new Audio(clickUrl)
 const playClick = () => { const a = clickAudio.cloneNode(); a.volume = 0.55 * channelVolume(loadSettings(), 'effects'); a.play().catch(() => {}) }
-
-const OPTION_TABS = [['controls', 'CONTROLS'], ['graphics', 'GRAPHICS'], ['sound', 'SOUND']]
-const VOLUMES = [['master', 'Master'], ['effects', 'Effects'], ['music', 'Music']]
 
 // three.js (~700 kB) only loads when a battle starts
 const Game = lazy(() => import('./Game'))
@@ -201,33 +199,7 @@ function MapSelect({ onPick, onBack }) {
 
 function StartScreen({ onStart, onHiScores, settings, onSettings }) {
   const [options, setOptions] = useState(false)
-  const [tab, setTab] = useState('controls')
-  const optionsRef = useRef(null)
   const optionsButtonRef = useRef(null)
-  useEffect(() => {
-    if (options) optionsRef.current?.showModal()
-    else if (optionsRef.current?.open) optionsRef.current.close()
-  }, [options])
-  const isMobile = matchMedia('(pointer: coarse)').matches
-  const controls = isMobile ? [
-    ['Drive Forward / Back', 'Left Joystick Up / Down'],
-    ['Turn Hull', 'Left Joystick Left / Right'],
-    ['Aim Turret', 'Drag on Right Side'],
-    ['Fire Cannon', 'FIRE Button'],
-    ['Coaxial MG (Hold)', 'MG Button / Space (keyboard)'],
-    ['Sniper Zoom (Toggle)', 'AIM Button'],
-    ['Toggle Map', 'MAP Button'],
-    ['Reset Turret to Front', 'Reset Icon ↺'],
-    ['Pause / Exit Menu', 'Door Icon'],
-  ] : [
-    ['Move Forward', 'W'], ['Move Backward', 'S'],
-    ['Turn Hull Left', 'A'], ['Turn Hull Right', 'D'],
-    ['Aim Turret', 'Mouse Movement'], ['Fire Cannon', 'Left Mouse Button'],
-    ['Coaxial MG (Hold)', 'Space'],
-    ['Sniper Zoom (Hold)', 'Right Mouse Button'], ['Camera Distance', 'Mouse Wheel'],
-    ['Reset Turret to Front', 'R'],
-    ['Toggle Map', 'M'], ['Pause / Exit Menu', 'ESC'],
-  ]
   return (
     <div className="screen keyart">
       <img src={import.meta.env.BASE_URL + 'assets/menu.jpg'} className="menu-bg" alt="" />
@@ -237,43 +209,10 @@ function StartScreen({ onStart, onHiScores, settings, onSettings }) {
       <div className="keyart-ui">
         <button className="battle-btn" onClick={() => { playClick(); onStart() }}>BATTLE!</button>
         <button ref={optionsButtonRef} className="battle-btn battle-btn-gray" onClick={() => { playClick(); setOptions(true) }}>OPTIONS</button>
-        <dialog ref={optionsRef} className="controls-dialog" aria-labelledby="controls-heading" onCancel={() => setOptions(false)} onClose={() => { setOptions(false); optionsButtonRef.current?.focus() }}>
-          <h2 id="controls-heading">Options</h2>
-          <div className="options-tabs" role="tablist" aria-label="Options">
-            {OPTION_TABS.map(([id, label]) => (
-              <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`}
-                className={`options-tab${tab === id ? ' active' : ''}`} onClick={() => { playClick(); setTab(id) }}>{label}</button>
-            ))}
-          </div>
-          {tab === 'controls' && <div role="tabpanel" id="panel-controls" aria-labelledby="tab-controls">
-            <p className="controls-caption">{isMobile ? 'MOBILE — TOUCH' : 'DESKTOP — KEYBOARD / MOUSE'}</p>
-            <dl className="controls-list">
-              {controls.map(([action, key]) => <div key={action}><dt>{action}</dt><dd>{key}</dd></div>)}
-            </dl>
-          </div>}
-          {tab === 'graphics' && <div role="tabpanel" id="panel-graphics" aria-labelledby="tab-graphics" className="settings-list">
-            <label className="setting-row">
-              <span>Render Quality</span>
-              <select value={settings.graphics} onChange={(e) => onSettings({ graphics: e.target.value })}>
-                {GRAPHICS.map((g) => <option key={g} value={g}>{g[0].toUpperCase() + g.slice(1)}</option>)}
-              </select>
-            </label>
-            <p className="setting-note">HIGH: full resolution + shadows · MEDIUM: lower resolution, softer shadows · LOW: no shadows/antialias, fewer details. Applies from the next battle.</p>
-          </div>}
-          {tab === 'sound' && <div role="tabpanel" id="panel-sound" aria-labelledby="tab-sound" className="settings-list">
-            {VOLUMES.map(([key, label]) => (
-              <label key={key} className="setting-row">
-                <span>{label}</span>
-                <input type="range" min="0" max="100" step="1" value={settings[key]}
-                  onChange={(e) => onSettings({ [key]: Number(e.target.value) })} onPointerUp={playClick} />
-                <output>{settings[key]}</output>
-              </label>
-            ))}
-          </div>}
-          <button className="options-btn" autoFocus onClick={() => { playClick(); setOptions(false) }}>BACK</button>
-        </dialog>
+        <OptionsDialog open={options} settings={settings} onSettings={onSettings} playClick={playClick}
+          onClose={() => { if (options) { setOptions(false); optionsButtonRef.current?.focus() } }} />
         <button className="battle-btn battle-btn-gold" onClick={() => { playClick(); onHiScores() }}>HI-SCORE</button>
-        <p className="menu-foot">TACTICAL INFORMATION SYSTEM — ESP32 AI TANK POC · v0.9</p>
+        <p className="menu-foot">Network Centric Warfare v1.0</p>
       </div>
     </div>
   )
@@ -460,7 +399,8 @@ export default function App() {
       {screen === 'mapselect' && <MapSelect onPick={pickMap} onBack={toMenu} />}
       {(screen === 'game' || screen === 'gameover') && (
         <Suspense fallback={<div className="screen"><p className="subtitle">DEPLOYING…</p></div>}>
-          <Game key={gameKey} onEnd={handleEnd} onExit={toMenu} resumeCount={resumeCount} inactive={screen === 'gameover'} map={map} />
+          <Game key={gameKey} onEnd={handleEnd} onExit={toMenu} resumeCount={resumeCount} inactive={screen === 'gameover'} map={map}
+            settings={settings} onSettings={updateSettings} playClick={playClick} />
         </Suspense>
       )}
       {screen === 'gameover' && <ReplayScreen onReplay={replay} onMenu={toMenu} continues={continues} />}
