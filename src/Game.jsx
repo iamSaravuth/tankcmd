@@ -10,6 +10,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
   const reloadLabelRef = useRef(null)
   const mgFillRef = useRef(null)
   const mgLabelRef = useRef(null)
+  const gearRef = useRef(null)
   const reticleRef = useRef(null)
   const crosshairRef = useRef(null)
   const scopeRef = useRef(null)
@@ -88,6 +89,10 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         reloadFillRef.current.style.background = frac >= 1 ? '#4fe07a' : '#d8a03c'
         if (reloadLabelRef.current) {
           reloadLabelRef.current.textContent = frac >= 1 ? 'READY' : `${g.player.cooldown.toFixed(1)}s`
+        }
+        if (gearRef.current) {
+          const v = g.player.vel || 0
+          gearRef.current.textContent = `${v < -0.3 ? 'R' : Math.abs(v) < 0.3 ? 'N' : g.player.gear} · ${Math.round(Math.abs(v) * 3.6)} km/h`
         }
         if (mgFillRef.current) {
           const heat = g.player.mgHeat || 0, over = g.player.mgOver
@@ -265,6 +270,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         {hud.apT > 0 && <div className="hud-box ap-badge"><span>AP ×2</span><b>{hud.apT}s</b></div>}
         <div className="hud-box"><span className="hud-label">KILLS</span><b>{hud.kills}/{hud.total}</b></div>
         <div className="hud-box"><span className="hud-label">MAP</span><b style={{textTransform:'uppercase'}}>{hud.theme || '—'}</b></div>
+        <div className="hud-box"><span className="hud-label">GEAR</span><b ref={gearRef} className="gear-val">N · 0 km/h</b></div>
         <div className="hud-box hint">M — MAP</div>
       </div>
       <div className="reload-wrap">
@@ -286,7 +292,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
           <span>R turret front</span><span>M map</span><span>Tab menu</span></>
         )}
         <span className="sep" />
-        <span>HP 100</span><span>Ammo ∞</span><span>Reload 5s</span><span>50 km/h</span>
+        <span>HP 100</span><span>Ammo ∞</span><span>Reload 5s</span><span>65 km/h</span>
       </div>
       {showMap && <Minimap game={gameRef} onClose={() => setShowMap(false)} />}
       {confirmQuit && (

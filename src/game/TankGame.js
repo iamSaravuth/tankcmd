@@ -13,12 +13,12 @@ const MAX_HP = 100              // equal HP for player & AI
 export const RELOAD_TIME = 5    // seconds — no continuous fire
 const SPEED = 14                // ~50 km/h
 const DMG_PLAYER = 34           // player shell damage vs AI
-// coaxial MG: unlimited ammo, 50 rounds = 1 cannon shell, overheats after a 50-round burst
-const MG_ROUNDS_PER_SHELL = 50
+// coaxial MG: unlimited ammo, 20 rounds = 1 cannon shell, overheats after a 20-round burst
+const MG_ROUNDS_PER_SHELL = 20
 const MG_DMG = DMG_PLAYER / MG_ROUNDS_PER_SHELL
 const MG_RATE = 10              // rounds / second
 const MG_SPEED = 320
-export const MG_COOL = 4        // seconds of forced cool-down after overheating
+export const MG_COOL = RELOAD_TIME // forced cool-down after overheating = cannon reload
 // player aiming (WoT-style: the view orbits freely 360°, the turret slews after it
 // the short way round): traverse / elevation speed (rad/s), elevation limits
 // (+ = barrel down), mouse / touch sensitivity (rad per px at 100%), fire buffer (s)
@@ -26,6 +26,12 @@ const TRAVERSE = 1.6, ELEVATE = 0.6
 const PITCH_UP = -0.5, PITCH_DOWN = 0.3
 const MOUSE_SENS = 0.0022, TOUCH_SENS = 0.0045
 const FIRE_BUFFER = 0.5
+// player drivetrain: automatic 3-speed box — top speed of each gear (fraction of
+// the tank's top speed) and its acceleration (m/s²); the power cuts briefly per shift
+const GEARS = [{ top: 0.3, acc: 3.2 }, { top: 0.62, acc: 2.4 }, { top: 1, acc: 1.6 }]
+const TOP_SPEED = 1.3           // x SPEED -> ~65 km/h in 3rd
+const REVERSE_TOP = 0.3, REVERSE_ACC = 2.5
+const SHIFT_TIME = 0.45, COAST_DECEL = 2.5, BRAKE_DECEL = 12
 // last kill: hold a slightly elevated shot of the final wreck before the win screen
 const VICTORY_HOLD = 10         // seconds
 const VICTORY_DIST = 24
@@ -322,7 +328,7 @@ export class TankGame {
     this.player = {
       mesh: new THREE.Group(), // empty until the M48A5 model lands — no placeholder tank
       yaw: Math.PI, hullYaw: Math.PI, pitch: 0, targetYaw: Math.PI, targetPitch: 0,
-      hp: MAX_HP, speed: this.movementSpeed, cooldown: 0, radius: 4.2,
+      hp: MAX_HP, speed: 0, vel: 0, gear: 1, shiftT: 0, cooldown: 0, radius: 4.2,
       camDist: this.mobile ? 15 : 13, dispersion: 0.15, zoom: false, moving: false,
     }
     // random spawns each new game: player on one side, enemies on the opposite side
@@ -1427,7 +1433,7 @@ export class TankGame {
     this.shells.push({ mesh, vel, owner, life: 6, ap })
   }
 
-  // coaxial MG: heat builds 1/50 per round; at full heat the gun locks for MG_COOL seconds
+  // coaxial MG: heat builds 1/20 per round; at full heat the gun locks for MG_COOL seconds
   updateMG(dt) {
     const p = this.player
     p.mgHeat ??= 0
@@ -1715,6 +1721,7 @@ export class TankGame {
     p.cooldown = 0
     p.mgHeat = 0
     p.mgOver = false
+    p.vel = 0; p.speed = 0; p.gear = 1; p.shiftT = 0
     p.zoom = false
     p.dispersion = 0.15
     p.moving = false
@@ -1765,6 +1772,30 @@ export class TankGame {
     return true
   }
 
+  // automatic 3-speed gearbox: slow pull-away in 1st, then 2nd and 3rd as speed builds
+  updateDrive(p, f, dt) {
+    const top = this.movementSpeed * TOP_SPEED
+    p.shiftT = Math.max(0, p.shiftT - dt)
+    const v = p.vel
+    if (f !== 0 && (v === 0 || Math.sign(f) === Math.sign(v))) {
+      if (f > 0) {
+        const g = GEARS[p.gear - 1]
+        if (v >= g.top * top * 0.98 && p.gear < GEARS.length) { p.gear++; p.shiftT = SHIFT_TIME }
+        const cur = GEARS[p.gear - 1]
+        if (p.shiftT === 0) p.vel = Math.min(v + cur.acc * Math.abs(f) * dt, cur.top * top * Math.abs(f))
+        if (p.vel < v) p.vel = Math.max(p.vel, v - COAST_DECEL * dt) // stick eased off
+      } else {
+        p.vel = Math.max(v - REVERSE_ACC * Math.abs(f) * dt, -REVERSE_TOP * top * Math.abs(f))
+      }
+    } else {
+      const decel = f !== 0 ? BRAKE_DECEL : COAST_DECEL  // opposite key = brake
+      p.vel = v > 0 ? Math.max(0, v - decel * dt) : Math.min(0, v + decel * dt)
+    }
+    // drop back a gear once speed falls well below the lower gear's limit
+    while (p.gear > 1 && p.vel < GEARS[p.gear - 2].top * top * 0.8) p.gear--
+    if (p.vel <= 0) p.gear = 1
+  }
+
   updatePlayer(dt) {
     // WoT-style: A/D rotate hull, W/S drive forward/back along hull heading.
     // Mouse controls turret yaw + camera independently.
@@ -1776,8 +1807,11 @@ export class TankGame {
     const yawDelta = Math.atan2(Math.sin(p.targetYaw - p.yaw), Math.cos(p.targetYaw - p.yaw))
     if (p.turretReset && Math.abs(yawDelta) < 0.005 && Math.abs(p.pitch) < 0.005) p.turretReset = false
     const aimSpeed = (this.mobile ? 1.2 : 1) * (p.turretReset ? 2 : 1)
-    p.yaw += THREE.MathUtils.clamp(yawDelta, -TRAVERSE * aimSpeed * dt, TRAVERSE * aimSpeed * dt)
-    p.pitch += THREE.MathUtils.clamp(p.targetPitch - p.pitch, -ELEVATE * aimSpeed * dt, ELEVATE * aimSpeed * dt)
+    // aim + camera run on real frame time: on a slow GPU (city/snow) the 0.05 s sim
+    // cap would otherwise make the turret and view lag far behind the mouse
+    const adt = this.frameDt ?? dt
+    p.yaw += THREE.MathUtils.clamp(yawDelta, -TRAVERSE * aimSpeed * adt, TRAVERSE * aimSpeed * adt)
+    p.pitch += THREE.MathUtils.clamp(p.targetPitch - p.pitch, -ELEVATE * aimSpeed * adt, ELEVATE * aimSpeed * adt)
     const prevCd = p.cooldown
     p.cooldown = Math.max(0, p.cooldown - dt)
     if (prevCd > 0 && p.cooldown === 0) this.sfx?.reload() // breech ready clack
@@ -1785,10 +1819,16 @@ export class TankGame {
     this.updateMG(dt)
     const f = this.touchDrive?.forward ?? ((this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0))
     const r = this.touchDrive?.turn ?? ((this.keys.KeyA ? 1 : 0) - (this.keys.KeyD ? 1 : 0))
-    p.moving = f !== 0 || r !== 0
-    this.sfx?.setEngine(f !== 0)   // engine roar only while driving, silent when hull-pivoting
+    this.updateDrive(p, f, dt)
+    p.moving = Math.abs(p.vel) > 0.3 || r !== 0
+    this.sfx?.setEngine(f !== 0 || Math.abs(p.vel) > 1)   // engine roar only while driving, silent when hull-pivoting
     p.hullYaw += r * 1.4 * dt
-    if (f !== 0) { this.moveTank(p, Math.sin(p.hullYaw) * f, Math.cos(p.hullYaw) * f, dt); this.knockTrees(p) }
+    if (Math.abs(p.vel) > 0.01) {
+      const dir = Math.sign(p.vel)
+      p.speed = Math.abs(p.vel)
+      if (!this.moveTank(p, Math.sin(p.hullYaw) * dir, Math.cos(p.hullYaw) * dir, dt)) p.vel = 0 // hit a wall / bank
+      this.knockTrees(p)
+    }
 
     // dispersion: blooms while moving, settles when stationary (WoT aim circle)
     const settle = p.moving ? 0.9 : 0.45
@@ -1805,7 +1845,7 @@ export class TankGame {
     p.mesh.rotation.y = p.hullYaw
     p.mesh.rotation.x = THREE.MathUtils.damp(p.mesh.rotation.x, -Math.atan2(front - back, L * 2), 5, dt)
     p.mesh.rotation.z = THREE.MathUtils.damp(p.mesh.rotation.z, Math.atan2(right - left, W * 2), 5, dt)
-    for (const wheel of p.mesh.userData.wheels || []) wheel.rotation.x += f * p.speed * dt / 0.62
+    for (const wheel of p.mesh.userData.wheels || []) wheel.rotation.x += p.vel * dt / 0.62
 
     // turret tracks the mouse aim relative to hull
     const tur = p.mesh.userData.turret
@@ -1849,8 +1889,8 @@ export class TankGame {
       this.cameraLookTarget.copy(lookTarget)
       this.cameraInitialized = true
     } else {
-      this.camera.position.lerp(camPos, 1 - Math.exp(-7 * dt))
-      this.cameraLookTarget.lerp(lookTarget, 1 - Math.exp(-10 * dt))
+      this.camera.position.lerp(camPos, 1 - Math.exp(-7 * adt))
+      this.cameraLookTarget.lerp(lookTarget, 1 - Math.exp(-10 * adt))
     }
     this.camera.updateProjectionMatrix()
     this.camera.lookAt(this.cameraLookTarget)
@@ -1935,6 +1975,7 @@ export class TankGame {
 
   // --- smoke puffs from damaged / wrecked tanks ---
   puffSmoke(pos, big) {
+    if (this.smokes.length > 160) return // each puff is its own draw call
     // shared puff geometry: smoke is emitted constantly (city fires) and must not allocate GPU buffers per puff
     const geos = (this._smokeGeos ??= [0.8, 1.4].map((r) => {
       const g = new THREE.SphereGeometry(r, 8, 8)
@@ -1967,7 +2008,7 @@ export class TankGame {
       for (const fs of this.fireSpots) {
         fs.t += 0.09
         // only fires near the player smoke: the city has ~60 burning buildings
-        if (fs.t < fs.dur && (fs.x - pp.x) ** 2 + (fs.z - pp.z) ** 2 < 350 * 350) this.puffSmoke(new THREE.Vector3(fs.x, fs.y, fs.z), Math.random() < 0.4)
+        if (fs.t < fs.dur && (fs.x - pp.x) ** 2 + (fs.z - pp.z) ** 2 < 260 * 260) this.puffSmoke(new THREE.Vector3(fs.x, fs.y, fs.z), Math.random() < 0.4)
       }
     }
     for (let i = this.smokes.length - 1; i >= 0; i--) {
@@ -2562,7 +2603,9 @@ export class TankGame {
 
   loop() {
     this.raf = requestAnimationFrame(this.loop)
-    const dt = Math.min(this.clock.getDelta(), 0.05)
+    const raw = this.clock.getDelta()
+    const dt = Math.min(raw, 0.05)
+    this.frameDt = Math.min(raw, 0.25)
     if (this.paused || this.over || this.playerDying || this.victory) this.sfx?.setEngine(false)
     if (!this.over && !this.paused) {
       if (this.playerDying) {
