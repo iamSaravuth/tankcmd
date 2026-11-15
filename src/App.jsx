@@ -382,6 +382,9 @@ export default function App() {
     const lockLandscape = () => {
       if (matchMedia('(pointer: coarse)').matches) window.screen.orientation?.lock?.('landscape').catch(() => {})
     }
+    // re-requesting while already fullscreen eats the click's user activation in Windows
+    // Chrome, so the new battle's pointer lock request fails and the mouse stops working
+    if (document.fullscreenElement) { lockLandscape(); return }
     const fullscreen = document.documentElement.requestFullscreen?.()
     if (fullscreen) fullscreen.then(lockLandscape).catch(lockLandscape)
     else lockLandscape()
