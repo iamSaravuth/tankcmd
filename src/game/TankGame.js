@@ -41,15 +41,12 @@ const VICTORY_HEIGHT = 9
 // on-screen warning radius (m), impact radius (m); damage = one enemy cannon shell
 const DRONES = { forest: 2, city: 3, snow: 5 }
 const DRONE_SPEED = 30, DRONE_ALT = 35, DRONE_WARN = 320, DRONE_HIT = 4.5
-// close-defence mode: the battle freezes at this range and the player shoots
-// the incoming drone down over the MG sight; it closes at DEF_SLOW of normal speed
+// close-defence mode: the battle freezes at this range and the player shoots the
+// incoming drone down over the M2 sight. Same flight for every map (difficulty = drone count):
+// DEF_SPEED m/s, banking turns limited to DEF_TURN rad/s towards a jink point that
+// changes every 1.5-3 s, straight terminal dive inside DEF_DIVE m
 const DRONE_ENGAGE = 260, DEF_PITCH_UP = -1.15
-// per difficulty: T = seconds from engage to impact, weave amplitude (m) / frequency (Hz), climb/dive swing (m)
-const DEF = {
-  forest: { T: 26, amp: 22, f: 0.3, v: 6 },
-  city: { T: 23, amp: 34, f: 0.45, v: 9 },
-  snow: { T: 20, amp: 48, f: 0.65, v: 12 },
-}
+const DEF_SPEED = 14, DEF_TURN = 0.8, DEF_DIVE = 60
 // AI difficulty per map: reload/spread/speed are multipliers, dmg = shell damage vs player, range = firing range (m)
 const AI_LEVELS = {
   forest: { reload: 1.4, spread: 1.6, speed: 0.85, dmg: 15, range: 200 }, // easy
@@ -400,16 +397,19 @@ export class TankGame {
       if (e.code === 'KeyR' && !e.repeat) this.resetTurret()
     }
     this._ku = (e) => { this.keys[e.code] = false; spaceOnly(e) }
+    // battlefield = the canvas or any non-interactive overlay drawn on top of it
+    const onField = (t) => t === this.renderer.domElement ||
+      (!!t?.closest && !!this.mount.parentElement?.contains(t) && !t.closest('button, a, input, select, dialog, .touch-aim, .touch-stick, .touch-fire, .touch-zoom'))
     this._mm = (e) => {
       // no lock yet (browser refused, or still cooling down after ESC): aim with
-      // the free cursor while it is over the canvas instead of freezing the turret
-      if (document.pointerLockElement !== this.renderer.domElement && (this.mobile || e.target !== this.renderer.domElement)) return
+      // the free cursor while it is over the battlefield instead of freezing the turret
+      if (document.pointerLockElement !== this.renderer.domElement && (this.mobile || !onField(e.target))) return
       const lim = 120 // Chrome on Windows sometimes reports one huge jump when the lock engages
       this.aimTurret(THREE.MathUtils.clamp(e.movementX, -lim, lim), THREE.MathUtils.clamp(e.movementY, -lim, lim))
     }
     this._md = (e) => {
       if (this.paused || this.over) return
-      if (e.target !== this.renderer.domElement && !e.target.closest?.('.touch-aim, .touch-stick, .touch-fire, .touch-zoom')) return
+      if (document.pointerLockElement !== this.renderer.domElement && !onField(e.target) && !e.target.closest?.('.touch-aim, .touch-stick, .touch-fire, .touch-zoom')) return
       // first gesture: create audio + start BGM (browser requires a gesture)
       this.ensureAudio() // fallback to synth riff
       if (e.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches) return
@@ -417,7 +417,7 @@ export class TankGame {
       if (document.pointerLockElement !== this.renderer.domElement) {
         // only re-lock when the canvas itself is clicked — not UI (e.g. quit dialog);
         // the same click still fires / scopes so no shot is lost to re-locking
-        if (e.target === this.renderer.domElement) {
+        if (onField(e.target)) {
           this.renderer.domElement.requestPointerLock()?.catch?.(() => {})
         } else if (!(e.button === 0 && this.player.zoom)) return
         this.pressMouse(e.button)
@@ -1500,7 +1500,7 @@ export class TankGame {
     const p = this.player
     p.mgHeat ??= 0
     p.mgT = Math.max(0, (p.mgT || 0) - dt)
-    const trigger = (this.keys.Space || this.mgTouch || (this.mgMouse && this.droneMode)) && !this.paused && !this.over && !this.playerDying
+    const trigger = (this.droneMode ? this.mgMouse || this.mgTouch : this.keys.Space || this.mgTouch) && !this.paused && !this.over && !this.playerDying
     if (p.mgOver) {
       p.mgHeat = Math.max(0, p.mgHeat - dt / MG_COOL)
       if (p.mgHeat === 0) p.mgOver = false
@@ -2330,15 +2330,8 @@ export class TankGame {
   startDroneDefense(d) {
     d.engaged = true
     const tgt = this.player.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
-    const fwd = d.mesh.position.clone().sub(tgt).setY(0)
-    const r0 = Math.max(40, fwd.length())
-    fwd.normalize()
-    this.droneMode = {
-      d, t: 0, r0, fwd, side: new THREE.Vector3(fwd.z, 0, -fwd.x),
-      h0: Math.max(18, d.mesh.position.y - tgt.y),
-      ph: [Math.random() * 6.3, Math.random() * 6.3, Math.random() * 6.3],
-      cfg: DEF[this.theme] ?? DEF.city,
-    }
+    d.vel.subVectors(tgt, d.mesh.position).setLength(DEF_SPEED)
+    this.droneMode = { d, t: 0, wp: null, wpT: 0, bank: 0 }
     this.player.zoom = false
     this.player.throttle = 0
     this.player.vel = 0
@@ -2390,27 +2383,52 @@ export class TankGame {
       if (m.t > (m.killT ??= m.t) + 0.9) this.endDroneDefense()
       return
     }
-    // scripted attack run: closes over cfg.T seconds while weaving side to side and
-    // bobbing — the weave fades out over the last ~40 m so the dive still connects
-    const c = m.cfg, target = p.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
-    const pos = d.mesh.position, prev = pos.clone()
-    const u = Math.min(1, m.t / c.T), r = m.r0 * (1 - u), fade = Math.min(1, r / 40), w = 2 * Math.PI * c.f
-    const lat = c.amp * fade * (Math.sin(w * m.t + m.ph[0]) * 0.75 + Math.sin(w * 2.3 * m.t + m.ph[1]) * 0.25)
-    const up = m.h0 * (1 - u) + c.v * fade * Math.sin(w * 0.7 * m.t + m.ph[2])
-    pos.copy(target).addScaledVector(m.fwd, r).addScaledVector(m.side, lat)
-    pos.y = Math.max(target.y + up, heightAt(pos.x, pos.z) + (r > 12 ? 3 : 0.5))
-    if (dt > 0) d.vel.subVectors(pos, prev).divideScalar(dt)
-    if (d.vel.lengthSq() > 1e-4) d.mesh.lookAt(pos.clone().add(d.vel))
+    // attack run: constant speed, banking turns towards a jink point beside / above the
+    // tank that is re-picked every few seconds, then a straight dive from DEF_DIVE m
+    const target = p.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
+    const pos = d.mesh.position
+    const flat = Math.hypot(target.x - pos.x, target.z - pos.z)
+    const dive = flat < DEF_DIVE
+    m.wpT -= dt
+    if (dive) m.wp = target
+    else if (!m.wp || m.wpT <= 0) {
+      const to = target.clone().sub(pos).setY(0).normalize()
+      const side = new THREE.Vector3(to.z, 0, -to.x)
+      const off = THREE.MathUtils.clamp(flat * 0.35, 15, 55) * (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5)
+      m.wp = target.clone().addScaledVector(side, off).addScaledVector(to, -flat * 0.35)
+      m.wp.y = target.y + 8 + Math.random() * 22
+      m.wpT = 1.5 + Math.random() * 1.5
+    }
+    const want = m.wp.clone().sub(pos)
+    if (want.lengthSq() < 1) want.subVectors(target, pos)
+    want.normalize()
+    const dir = d.vel.clone().normalize()
+    const ang = dir.angleTo(want), maxT = (dive ? 2.5 : DEF_TURN) * dt
+    if (ang > 1e-4) {
+      const axis = new THREE.Vector3().crossVectors(dir, want)
+      if (axis.lengthSq() < 1e-8) axis.set(0, 1, 0)
+      dir.applyAxisAngle(axis.normalize(), Math.min(ang, maxT))
+    }
+    const turn = Math.sign(dir.x * d.vel.z - dir.z * d.vel.x) * Math.min(ang, maxT) / Math.max(dt, 1e-4)
+    d.vel.copy(dir).multiplyScalar(DEF_SPEED * (dive ? 1.3 : 1))
+    pos.addScaledVector(d.vel, dt)
+    if (!dive) pos.y = Math.max(pos.y, heightAt(pos.x, pos.z) + 4)
+    m.bank = THREE.MathUtils.damp(m.bank, THREE.MathUtils.clamp(turn * 0.9, -0.8, 0.8), 4, dt)
+    d.mesh.lookAt(pos.clone().add(d.vel))
+    d.mesh.rotateZ(m.bank)
     d.life += dt
     d.mesh.userData.light.visible = (d.life * 6) % 1 < 0.5
     const dist = pos.distanceTo(target)
-    this.droneWarn = { dist, defense: true, eta: Math.max(0, c.T - m.t) }
+    this.droneWarn = { dist, defense: true, eta: dist / d.vel.length() }
     this._beepT -= dt
     if (this._beepT <= 0) { this.sfx?.beep(); this._beepT = 0.1 + 0.4 * dist / DRONE_ENGAGE }
-    if (m.t >= c.T && !(p.respawnShield > 0)) {   // too slow: it rams home
-      this.destroyDrone(d, true)
-      this.damagePlayer(this.ai.dmg, d.vel.clone().negate())
+    if (dist < DRONE_HIT) {        // too slow: it rams home
+      const shielded = p.respawnShield > 0
+      this.destroyDrone(d, !shielded)
+      if (!shielded) this.damagePlayer(this.ai.dmg, d.vel.clone().negate())
       this.endDroneDefense()
+    } else if (pos.y <= heightAt(pos.x, pos.z) + 0.3 || m.t > 90) {
+      this.destroyDrone(d)
     }
   }
 

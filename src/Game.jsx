@@ -112,7 +112,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
     if (!mobile) game.renderer.domElement.requestPointerLock()?.catch?.(() => {})
 
     let raf
-    const m2 = { shots: 0, at: -1e9, rot: 0 }
+    const m2 = { shots: 0, at: -1e9, rot: 0, yaw: null, pitch: 0, ox: 0, oy: 0, t: performance.now() }
     const tick = () => {
       const g = gameRef.current
       if (g && g.player && reloadFillRef.current) {
@@ -151,7 +151,20 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
             for (let k = 0; k < Math.min(fresh, 3); k++) ejectCase(m2Ref.current)
           }
           const kick = def ? Math.max(0, 1 - (now - m2.at) / 90) : 0
-          if (m2Ref.current) m2Ref.current.style.transform = `translateX(-50%) translateY(${kick * 12}px) rotate(${(Math.random() - 0.5) * kick * 1.2}deg)`
+          // the gun swings with the mouse and lags a little behind the view, like a pintle mount
+          const dtm = Math.min(0.1, (now - m2.t) / 1000)
+          m2.t = now
+          const yaw = g.player.yaw, pitch = g.player.pitch
+          if (def && m2.yaw !== null) {
+            const dy = Math.atan2(Math.sin(yaw - m2.yaw), Math.cos(yaw - m2.yaw))
+            m2.ox = Math.max(-90, Math.min(90, m2.ox + dy * 260))
+            m2.oy = Math.max(-50, Math.min(50, m2.oy + (pitch - m2.pitch) * 200))
+          }
+          m2.yaw = def ? yaw : null
+          m2.pitch = pitch
+          const k = Math.exp(-7 * dtm)
+          m2.ox *= k; m2.oy *= k
+          if (m2Ref.current) m2Ref.current.style.transform = `translateX(calc(-50% + ${m2.ox}px)) translateY(${m2.oy + kick * 12}px) rotate(${m2.ox * 0.04 + (Math.random() - 0.5) * kick * 1.2}deg)`
           if (m2FlashRef.current) {
             const on = def && (fresh > 0 || now - m2.at < 50)
             m2FlashRef.current.style.opacity = on ? '1' : '0'
@@ -328,7 +341,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         <div className="drone-heat"><span>M2 HEAT</span><i><b ref={droneHeatRef} /></i><em ref={droneHeatLabelRef}>READY</em></div>
         
         <div className="drone-sight-top">DRONE DEFENSE · M2 .50 <b ref={droneEtaRef}>0 m</b></div>
-        <div className="drone-sight-hint">SPACE / LMB — shoot it down</div>
+        <div className="drone-sight-hint">HOLD LEFT MOUSE — shoot it down</div>
       </div>
       <div ref={droneWarnRef} className="drone-warn" role="alert" hidden>
         <svg viewBox="0 0 64 56" aria-hidden="true"><path d="M32 3 L61 53 H3 Z" fill="#e0201a" stroke="#fff" strokeWidth="3" strokeLinejoin="round" /><rect x="29" y="18" width="6" height="20" rx="2" fill="#fff" /><circle cx="32" cy="45" r="3.5" fill="#fff" /></svg>
