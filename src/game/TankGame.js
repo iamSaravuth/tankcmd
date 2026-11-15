@@ -31,7 +31,12 @@ const FIRE_BUFFER = 0.5
 // the tank's top speed) and its acceleration (m/s²); the power cuts briefly per shift
 const GEARS = [{ top: 0.4, acc: 3.2 }, { top: 0.62, acc: 1.76 }, { top: 1, acc: 1.17 }]
 const TOP_SPEED = 48 / 3.6 / SPEED // 48 km/h in 3rd
-const SPEED_UP = 1.35           // Speed-up airdrop: top speed + acceleration multiplier
+// airdrops stack until the tank is hit: Speed / AP go 2x -> 3x -> 4x, HP +50 each (no cap)
+const BUFF_MAX = 4, HP_DROP = 50
+// ground covered per displayed km/h: every tank drives this much faster than its
+// speedo reads, so the battle feels quicker while the gear readout stays the same
+const PACE = 1.5
+const SHELL_SPEED = 260, ENEMY_SHELL_SPEED = 195
 const REVERSE_TOP = 0.3, REVERSE_ACC = 2.5
 const SHIFT_TIME = 0.45, COAST_DECEL = 2.5, BRAKE_DECEL = 12
 // last kill: hold a slightly elevated shot of the final wreck before the win screen
@@ -962,8 +967,8 @@ export class TankGame {
         }
       }
       this.buildings.push({ x, z, w, d, y: y - 0.3, h })
-      // bld: shells use the exact box (hitBuildingWall); tanks still collide with this circle
-      this.rocks.push({ x, z, y, r: Math.max(w, d) * 0.62, bld: true })
+      // bld: shells use the exact box (hitBuildingWall); tanks collide with the footprint box
+      this.rocks.push({ x, z, y, r: Math.max(w, d) * 0.62, bld: true, box: [w, d] })
       if (Math.random() < 0.35) {
         this.fireSpots.push({ x: x + (Math.random() - 0.5) * w, y: y + h * (0.5 + Math.random() * 0.5), z: z + (Math.random() - 0.5) * d, t: 0, dur: 9999 })
       }
@@ -1367,9 +1372,9 @@ export class TankGame {
 
   emitHud() {
     this.onHud({
-      hp: this.player.hp, maxHp: MAX_HP, ammo: Infinity,
+      hp: this.player.hp, maxHp: this.player.hpMax || MAX_HP, ammo: Infinity,
       kills: this.kills, total: this.enemies.length, theme: this.theme, bonus: this.bonus || 0,
-      ap: this.player.apT > 0, spd: !!this.player.speedUp,
+      ap: this.player.apT || 0, spd: this.player.speedUp || 0,
       hitArcs: this.hitArcs,
     })
   }
@@ -1523,7 +1528,7 @@ export class TankGame {
     dir.y += (Math.random() - 0.5) * sp
     dir.z += (Math.random() - 0.5) * sp * 2
     dir.normalize()
-    this.spawnShell(from.add(dir.clone().multiplyScalar(8)), dir.clone().multiplyScalar(160), 'player')
+    this.spawnShell(from.add(dir.clone().multiplyScalar(8)), dir.clone().multiplyScalar(SHELL_SPEED), 'player')
     this.muzzleFlash(this.muzzleInfo(p, dir) || from, dir)
     p.dispersion = Math.min(1, p.dispersion + 0.55) // recoil bloom
     this.emitHud()
@@ -1541,7 +1546,7 @@ export class TankGame {
     dir.y += (Math.random() - 0.5) * spread
     dir.z += (Math.random() - 0.5) * spread * 2
     dir.normalize()
-    this.spawnShell(from.add(dir.clone().multiplyScalar(7.5)), dir.clone().multiplyScalar(120), 'enemy', e.apT > 0 ? 2 : 1)
+    this.spawnShell(from.add(dir.clone().multiplyScalar(7.5)), dir.clone().multiplyScalar(ENEMY_SHELL_SPEED), 'enemy', e.apT || 1)
     this.muzzleFlash(this.muzzleInfo(e, dir) || from, dir)
   }
 
@@ -1664,7 +1669,7 @@ export class TankGame {
           seg.closestPointToPoint(c, true, cp)
           if (cp.distanceTo(c) < e.radius + 0.4) {
             bp.copy(cp)
-            this.damageEnemy(e, MG_DMG * (this.player.apT > 0 ? 2 : 1), false)
+            this.damageEnemy(e, MG_DMG * (this.player.apT || 1), false)
             hit = 'tank'; break
           }
         }
@@ -1752,7 +1757,7 @@ export class TankGame {
   clearBuffs(t) {
     if (!(t.apT > 0) && !t.speedUp) return
     t.apT = 0
-    t.speedUp = false
+    t.speedUp = 0
     if (t === this.player) this.emitHud()
   }
 
@@ -1861,6 +1866,7 @@ export class TankGame {
     }
     p.mesh.position.copy(saved.position)
     p.hp = MAX_HP
+    p.hpMax = MAX_HP
     p.cooldown = 0
     p.mgHeat = 0
     p.mgOver = false
@@ -1897,28 +1903,47 @@ export class TankGame {
   moveTank(obj, dirX, dirZ, dt) {
     const len = Math.hypot(dirX, dirZ)
     if (len < 1e-4) return false
-    const sp = obj.speed * (obj !== this.player && obj.speedUp ? SPEED_UP : 1)
-    const nx = obj.mesh.position.x + (dirX / len) * sp * dt
-    const nz = obj.mesh.position.z + (dirZ / len) * sp * dt
-    if (Math.abs(nx) > WORLD_HALF - 10 || Math.abs(nz) > WORLD_HALF - 10) return false
-    if (isWater(nx, nz)) return false
-    // rocks block movement — but always allow escaping if already overlapping:
-    // block only moves that take the tank deeper into the rock
+    const sp = obj.speed * (obj !== this.player ? obj.speedUp || 1 : 1) * PACE
     const px = obj.mesh.position.x, pz = obj.mesh.position.z
+    const nx = px + (dirX / len) * sp * dt
+    const nz = pz + (dirZ / len) * sp * dt
+    // blocked head-on: slide along the wall/rock on whichever axis is still free
+    for (const [x, z] of [[nx, nz], [nx, pz], [px, nz]]) {
+      if ((x !== px || z !== pz) && !this.blocked(obj, x, z)) {
+        obj.mesh.position.x = x
+        obj.mesh.position.z = z
+        return true
+      }
+    }
+    return false
+  }
+
+  // rocks/buildings block movement — but always allow escaping if already
+  // overlapping: block only moves that take the tank deeper in. Colliders are
+  // kept tight (about the hull's half-width) so tanks can squeeze past
+  blocked(obj, nx, nz) {
+    if (Math.abs(nx) > WORLD_HALF - 10 || Math.abs(nz) > WORLD_HALF - 10) return true
+    if (isWater(nx, nz)) return true
+    const px = obj.mesh.position.x, pz = obj.mesh.position.z
+    const m = obj.radius * 0.45
     for (const rk of this.rocks) {
-      const rr = rk.r + obj.radius * 0.7
+      if (rk.box) { // city block: exact footprint, signed distance to the box
+        const sd = (x, z) => Math.max(Math.abs(x - rk.x) - rk.box[0] / 2, Math.abs(z - rk.z) - rk.box[1] / 2)
+        const dn = sd(nx, nz)
+        if (dn < m && dn < sd(px, pz)) return true
+        continue
+      }
+      const rr = rk.r * 0.8 + m
       const dx = nx - rk.x, dz = nz - rk.z
       const cdx = px - rk.x, cdz = pz - rk.z
-      if (dx * dx + dz * dz < rr * rr && dx * dx + dz * dz < cdx * cdx + cdz * cdz) return false
+      if (dx * dx + dz * dz < rr * rr && dx * dx + dz * dz < cdx * cdx + cdz * cdz) return true
     }
-    obj.mesh.position.x = nx
-    obj.mesh.position.z = nz
-    return true
+    return false
   }
 
   // automatic 3-speed gearbox: slow pull-away in 1st, then 2nd and 3rd as speed builds
   updateDrive(p, f, dt) {
-    const boost = p.speedUp ? SPEED_UP : 1
+    const boost = p.speedUp || 1
     const top = this.movementSpeed * TOP_SPEED * boost
     p.shiftT = Math.max(0, p.shiftT - dt)
     const v = p.vel
@@ -2715,11 +2740,12 @@ export class TankGame {
 
   applyDrop(tank, type) {
     if (type === 'hp') {
-      tank.hp = Math.min(MAX_HP, tank.hp + 40)
+      tank.hp += HP_DROP
+      tank.hpMax = Math.max(tank.hpMax || MAX_HP, tank.hp) // HP bar scale grows with stacked HP
     } else if (type === 'ap') {
-      tank.apT = 1 // attack power x2 — kept until this tank is hit
+      tank.apT = Math.min(BUFF_MAX, (tank.apT || 1) + 1) // attack power multiplier — kept until this tank is hit
     } else {
-      tank.speedUp = true // faster drive — kept until this tank is hit
+      tank.speedUp = Math.min(BUFF_MAX, (tank.speedUp || 1) + 1) // drive multiplier — kept until this tank is hit
     }
     this.pickupBurst(tank.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)), type)
     this.sfx?.reload()
@@ -2906,13 +2932,13 @@ export class TankGame {
           for (const e of dead ? [] : this.enemies) {
             if (!e.alive) continue
             if (sp.distanceTo(e.mesh.position.clone().add(new THREE.Vector3(0, 2.4, 0))) < e.radius + 0.6) {
-              this.damageEnemy(e, DMG_PLAYER * (this.player.apT > 0 ? 2 : 1))
+              this.damageEnemy(e, DMG_PLAYER * (this.player.apT || 1))
               dead = true; cause = 'tank'; break
             }
           }
         } else {
           if (this.player.hp > 0 && sp.distanceTo(p.clone().add(new THREE.Vector3(0, 2.2, 0))) < this.player.radius + 0.6) {
-            this.damagePlayer(this.ai.dmg * (s.ap > 0 ? 2 : 1), s.vel.clone().negate()); dead = true; cause = 'tank'
+            this.damagePlayer(this.ai.dmg * Math.max(2, s.ap || 1), s.vel.clone().negate()); dead = true; cause = 'tank'
           }
         }
       }
@@ -2921,7 +2947,7 @@ export class TankGame {
           this.explode(sp, cause === 'tank')
           if (cause === 'tank') this.sfx?.explode()
           else if (cause !== 'car' && cause !== 'tree') this.sfx?.impact()
-          if (wallHit) this.addWallMark(wallHit.p, wallHit.n, (s.ap > 0 || (s.owner === 'player' && this.player.apT > 0) ? 5 : 3.6) * (0.85 + Math.random() * 0.3))
+          if (wallHit) this.addWallMark(wallHit.p, wallHit.n, (s.ap > 1 || (s.owner === 'player' && this.player.apT > 0) ? 5 : 3.6) * (0.85 + Math.random() * 0.3))
           if (cause === 'ground' || cause === 'tank' || cause === 'rock') this.addCrater(sp.x, sp.z, cause === 'tank' ? 5.5 : 4, cause === 'tank' ? 1 : 0.7)
         }
         this.scene.remove(s.mesh)
