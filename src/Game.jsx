@@ -349,8 +349,8 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
           </div>
         </div>
         <div className="hud-box"><span className="hud-label">AMMO</span><b>∞</b></div>
-        {hud.ap && <div className="hud-box ap-badge"><span>AP ×2</span><b>UNTIL HIT</b></div>}
-        {hud.spd && <div className="hud-box ap-badge spd-badge"><span>SPEED UP</span><b>UNTIL HIT</b></div>}
+        {hud.ap && <div className="hud-box ap-badge"><span>AP ×2</span><b>ON</b></div>}
+        {hud.spd && <div className="hud-box ap-badge spd-badge"><span>SPEED UP</span><b>ON</b></div>}
         <div className="hud-box"><span className="hud-label">KILLS</span><b>{hud.kills}/{hud.total}</b></div>
         <div className="hud-box"><span className="hud-label">BONUS</span><b>{(hud.bonus || 0).toLocaleString()}</b></div>
         <div className="hud-box"><span className="hud-label">MAP</span><b style={{textTransform:'uppercase'}}>{hud.theme || '—'}</b></div>

@@ -2581,7 +2581,7 @@ export class TankGame {
         for (const s of [1, -1]) {
           const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.13, 0.13), blue)
           bar.position.set(x, s * 0.15, 0)
-          bar.rotation.z = -s * Math.PI / 4
+          bar.rotation.z = s * Math.PI / 4
           icon.add(bar)
         }
       }
