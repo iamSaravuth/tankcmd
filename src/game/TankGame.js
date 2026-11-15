@@ -470,6 +470,12 @@ export class TankGame {
         this.swapModel(e, prepTankModel(g.scene, this.theme === 'snow' ? new THREE.Color(0.5, 0.56, 0.64) : new THREE.Color(0.72, 0.64, 0.45), 16))
       }
     })
+    // FPV kamikaze drone: keep the procedural placeholder if this fails
+    loader.load(`${import.meta.env.BASE_URL}models/drone.glb`, (g) => {
+      if (this.disposed) return
+      this.droneProto = this.prepDroneModel(g.scene)
+      for (const d of this.drones || []) this.swapDroneModel(d.mesh)
+    })
     load('police-wrecks.glb', (g) => {
       if (this.disposed) return
       this.wreckProtos.police = g.scene
@@ -2180,6 +2186,7 @@ export class TankGame {
     const n = DRONES[this.theme] ?? 3
     for (let i = 0; i < n; i++) {
       const mesh = this.buildDroneMesh()
+      this.swapDroneModel(mesh)
       const a = side + (Math.random() - 0.5) * 1.2, r = 470
       const x = Math.sin(a) * r, z = Math.cos(a) * r
       mesh.position.set(x, groundY(x, z) + DRONE_ALT, z)
@@ -2206,9 +2213,37 @@ export class TankGame {
     light.position.set(0, 0.35, 0.6)
     g.add(body, nose, wing, light)
     g.userData.light = light
+    g.userData.parts = g.children.filter((c) => c !== light)
     g.scale.setScalar(1.4)
     g.traverse((o) => { if (o.isMesh) o.castShadow = true })
     return g
+  }
+
+  // drone.glb (Sketchfab, CC-BY-4.0): warhead points along (+x, -z); turn it to +z
+  // so lookAt() aims the warhead along the flight path, center it, ~3.6 m across
+  prepDroneModel(scene) {
+    const inner = new THREE.Group().add(scene.clone(true))
+    inner.rotation.y = -Math.PI * 0.75
+    inner.updateMatrixWorld(true)
+    const bb = new THREE.Box3().setFromObject(inner)
+    const size = bb.getSize(new THREE.Vector3())
+    inner.scale.setScalar(3.6 / Math.max(size.x, size.z))
+    inner.updateMatrixWorld(true)
+    const ctr = new THREE.Box3().setFromObject(inner).getCenter(new THREE.Vector3())
+    inner.position.sub(ctr)
+    const mat = new THREE.MeshStandardMaterial({ color: 0x4e5559, roughness: 0.6, metalness: 0.3, side: THREE.DoubleSide })
+    inner.traverse((o) => { if (o.isMesh) { o.material = mat; o.castShadow = true } })
+    return inner
+  }
+
+  swapDroneModel(g) {
+    if (!this.droneProto || g.userData.glb) return
+    for (const c of g.userData.parts) g.remove(c)
+    g.scale.setScalar(1)
+    g.add(this.droneProto.clone(true))
+    g.userData.light.position.set(0, 0.42, 0)
+    g.userData.light.scale.setScalar(0.7)
+    g.userData.glb = true
   }
 
   destroyDrone(d, hitPlayer = false) {
