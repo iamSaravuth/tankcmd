@@ -347,6 +347,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
       <div ref={droneSightRef} className="drone-sight" hidden aria-hidden="true">
         <div ref={m2Ref} className="m2-wrap">
           <img ref={m2FlashRef} className="m2-flash" src={import.meta.env.BASE_URL + 'assets/muzzleflash.webp'} alt="" />
+          <img className="m2-box" src={import.meta.env.BASE_URL + 'assets/gbox.webp'} alt="" />
           <img className="m2-gun" src={import.meta.env.BASE_URL + 'assets/m2-2.webp'} alt="" />
         </div>
         <div className="drone-heat"><span>M2 HEAT</span><i><b ref={droneHeatRef} /></i><em ref={droneHeatLabelRef}>READY</em></div>
