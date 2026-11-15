@@ -271,7 +271,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
   const hpPct = (hud.hp / hud.maxHp) * 100
   const hpBox = (
     <div className="hud-box hp-wide">
-      <span className="hud-label">HP</span>
+      <span className="hud-label">M48A5</span>
       <div className="hp-track">
         <div className="hp-fill" style={{ width: `${hpPct}%`, background: hpPct > 40 ? '#4fe07a' : '#e04434' }} />
         <span className="hp-num">{hud.hp}</span>
