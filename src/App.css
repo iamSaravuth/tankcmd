@@ -218,7 +218,7 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
   100% { opacity: 0 }
 }
 .hud {
-  position: absolute; left: 20px; bottom: 20px; display: flex; gap: 14px; align-items: center;
+  position: absolute; left: max(20px, env(safe-area-inset-left)); top: max(16px, env(safe-area-inset-top)); display: flex; gap: 14px; align-items: center;
   pointer-events: none;
 }
 .hud-box {
@@ -385,7 +385,7 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 .mobile-game .hud-box b { font-size: 16px; }
 .mobile-game .hp-wide { min-width: 0; }
 .mobile-game .hp-track { width: 100px; height: 16px; }
-.mobile-game .hud-box:nth-child(2), .mobile-game .hud-box:has(b[style]), .mobile-game .hint, .mobile-game .control-guide, .mobile-game .lock-hint { display: none; }
+.mobile-game .control-guide, .mobile-game .lock-hint { display: none; }
 .mobile-game .reload-wrap { bottom: max(16px, env(safe-area-inset-bottom)); padding: 5px 8px; font-size: 11px; }
 .mobile-game .reload-wrap.mg-wrap { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 32px); }
 .touch-mg { bottom: max(24px, env(safe-area-inset-bottom)); right: calc(max(24px, env(safe-area-inset-right)) + clamp(76px, 20vh, 110px) + 16px); width: 64px; height: 64px; }
@@ -419,7 +419,7 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 .continue-description { font-size: 12px; line-height: 1.6; color: #dedbd5; margin-bottom: 26px; }
 .continue-panel .row { justify-content: center; gap: 22px; flex-wrap: wrap; }
 .continue-panel .btn { font-size: 17px; letter-spacing: 1px; min-height: 44px; padding: 12px 24px; }
-.battle-continues { position: absolute; left: max(20px, env(safe-area-inset-left)); top: max(16px, env(safe-area-inset-top)); z-index: 3; pointer-events: none; }
+.battle-continues { position: absolute; left: max(20px, env(safe-area-inset-left)); top: calc(max(16px, env(safe-area-inset-top)) + 66px); z-index: 3; pointer-events: none; }
 .battle-continues .continue-stars { gap: 5px; min-height: 24px; }
 .battle-continues .continue-stars svg { width: 24px; height: 26px; }
 .mobile-game .battle-continues { top: calc(max(10px, env(safe-area-inset-top)) + 44px); }
