@@ -544,13 +544,32 @@ export class TankGame {
     this.scene.remove(tank.mesh)
     this.scene.add(nu)
     tank.mesh = nu
-    // measure the real track spacing from the loaded hull so ground marks sit
-    // exactly under the wheels (hull half-width → track centres ≈ 0.82×)
-    nu.updateMatrixWorld(true)
-    const hb = new THREE.Box3().setFromObject(nu.getObjectByName('hull') || nu)
-    hb.applyMatrix4(nu.matrixWorld.clone().invert())
-    tank.trackOff = Math.max(1.2, (hb.max.x - hb.min.x) / 2 * 0.62)
-    tank.trackCX = (hb.max.x + hb.min.x) / 2 // hull centre offset inside the wrap
+    this.measureTracks(tank)
+  }
+
+  // ground marks sit under the real track belts: measure them in the tank's own
+  // frame (identity transform, vertex-precise boxes) — falls back to the hull width
+  measureTracks(tank) {
+    const m = tank.mesh, pos = m.position.clone(), rot = m.rotation.clone()
+    m.position.set(0, 0, 0); m.rotation.set(0, 0, 0)
+    m.updateMatrixWorld(true)
+    const centres = []
+    m.traverse((o) => {
+      if (!/^track/i.test(o.name) || o.isMesh || !o.children.length) return
+      const b = new THREE.Box3().setFromObject(o, true)
+      if (b.max.z - b.min.z > 4) centres.push((b.min.x + b.max.x) / 2)
+    })
+    if (centres.length >= 2) {
+      const l = Math.min(...centres), r = Math.max(...centres)
+      tank.trackOff = (r - l) / 2
+      tank.trackCX = (l + r) / 2
+    } else {
+      const hb = new THREE.Box3().setFromObject(m.getObjectByName('hull') || m, true)
+      tank.trackOff = Math.max(1.2, (hb.max.x - hb.min.x) / 2 * 0.8)
+      tank.trackCX = (hb.max.x + hb.min.x) / 2
+    }
+    m.position.copy(pos); m.rotation.copy(rot)
+    m.updateMatrixWorld(true)
   }
 
   // one-time per tank: measure the visual barrel's yaw inside the mesh frame
@@ -1002,7 +1021,7 @@ export class TankGame {
     for (let y = 0; y < 64; y += 16) ctx.fillRect(2, y + 2, 60, 8)
     const texture = new THREE.CanvasTexture(cv)
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
-    this.trackMarks = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.85, 0.8).rotateX(-Math.PI / 2), material, 2400)
+    this.trackMarks = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.1, 0.8).rotateX(-Math.PI / 2), material, 2400)
     this.trackMarks.count = 0
     this.trackMarks.frustumCulled = false
     this.trackMarks.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
