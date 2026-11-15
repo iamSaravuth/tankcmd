@@ -246,7 +246,48 @@ function prepTankModel(proto, tint, targetLen) {
     wrap.userData.gun = pivot
     wrap.userData.gunBase = 0
   }
+  rigRunningGear(wrap)
   return wrap
+}
+
+// road wheels spin and track belts scroll with the hull's motion. Each wheel is
+// re-pivoted at its own centre (axle = wrap X); each belt gets its own texture so
+// its UV strip can scroll per side, letting the sides counter-rotate in pivot turns
+function rigRunningGear(wrap) {
+  wrap.updateMatrixWorld(true)
+  const meshes = []
+  wrap.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o) })
+  const wheels = [], belts = []
+  const v = new THREE.Vector3()
+  for (const o of meshes) {
+    const mat = o.material?.name || ''
+    if (/wheel/i.test(mat)) {
+      const b = new THREE.Box3().setFromObject(o, true)
+      const c = b.getCenter(new THREE.Vector3())
+      const pivot = new THREE.Group()
+      pivot.position.copy(c)
+      wrap.add(pivot)
+      pivot.updateMatrixWorld(true)
+      pivot.attach(o)
+      wheels.push({ pivot, r: Math.max(0.05, (b.max.y - b.min.y) / 2), x: c.x })
+    } else if (/track/i.test(mat) && o.material.map && o.geometry.attributes.uv) {
+      // scroll rate: du per metre along the ground run (bottom of the belt)
+      const pos = o.geometry.attributes.position, uv = o.geometry.attributes.uv
+      const pts = []
+      for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld); pts.push([v.y, v.z, uv.getX(i), v.x]) }
+      const minY = Math.min(...pts.map((q) => q[0])), maxY = Math.max(...pts.map((q) => q[0]))
+      const low = pts.filter((q) => q[0] < minY + (maxY - minY) * 0.15)
+      const n = low.length, mz = low.reduce((a, q) => a + q[1], 0) / n, mu = low.reduce((a, q) => a + q[2], 0) / n
+      let szu = 0, szz = 0
+      for (const q of low) { szu += (q[1] - mz) * (q[2] - mu); szz += (q[1] - mz) ** 2 }
+      if (!szz) continue
+      o.material.map = o.material.map.clone()
+      o.material.map.wrapS = THREE.RepeatWrapping
+      o.material.map.needsUpdate = true
+      belts.push({ map: o.material.map, dudz: szu / szz, x: pts.reduce((a, q) => a + q[3], 0) / pts.length })
+    }
+  }
+  if (wheels.length || belts.length) wrap.userData.gear = { wheels, belts }
 }
 
 export class TankGame {
@@ -554,7 +595,25 @@ export class TankGame {
     this.scene.remove(tank.mesh)
     this.scene.add(nu)
     tank.mesh = nu
+    tank.lastGear = null
     this.measureTracks(tank)
+  }
+
+  // ground run of the belt stays put on the ground: it moves back by the hull's
+  // forward travel; each side adds the pivot-turn component (a point at local +x
+  // moves back by x * dyaw as yaw grows)
+  updateRunningGear(t) {
+    const g = t.mesh.userData.gear
+    if (!g) return
+    const pos = t.mesh.position, yaw = t.mesh.rotation.y
+    const last = t.lastGear
+    t.lastGear = { x: pos.x, z: pos.z, yaw }
+    if (!last) return
+    const d = (pos.x - last.x) * Math.sin(yaw) + (pos.z - last.z) * Math.cos(yaw)
+    const dy = Math.atan2(Math.sin(yaw - last.yaw), Math.cos(yaw - last.yaw))
+    if (Math.abs(d) > 5) return
+    for (const w of g.wheels) w.pivot.rotation.x += (d - w.x * dy) / w.r
+    for (const b of g.belts) b.map.offset.x += (d - b.x * dy) * b.dudz
   }
 
   // ground marks sit under the real track belts: measure them in the tank's own
@@ -2988,6 +3047,8 @@ export class TankGame {
       this.separateTanks()
       if (!this.playerDying) this.updateTrackMarks(this.player)
       for (const e of this.enemies) if (e.alive) this.updateTrackMarks(e)
+      if (!this.playerDying) this.updateRunningGear(this.player)
+      for (const e of this.enemies) if (e.alive) this.updateRunningGear(e)
       this.updateDrops(dt)
       this.updateDrones(dt)
       }
