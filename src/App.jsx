@@ -200,6 +200,22 @@ function MapSelect({ onPick, onBack }) {
   )
 }
 
+// shown after the fresh page load between battles: the click re-grants fullscreen + pointer lock
+function DeployScreen({ map, onDeploy }) {
+  const [bg] = useState(() => (Math.random() < 0.5 ? 'deploy.jpg' : 'deploy2.jpg'))
+  return (
+    <div className="screen keyart deploy-screen" onClick={() => { playClick(); onDeploy() }}>
+      <img src={import.meta.env.BASE_URL + 'assets/' + bg} className="menu-bg deploy-bg" alt="" />
+      <EmberFX />
+      <div className="deploy-ui">
+        <h1 className="deploy-map">{map.toUpperCase()}</h1>
+        <h2 className="deploy-tank">M48A5</h2>
+        <button className="btn deploy-btn" autoFocus>DEPLOY</button>
+      </div>
+    </div>
+  )
+}
+
 function StartScreen({ onStart, onHiScores, settings, onSettings }) {
   const [options, setOptions] = useState(false)
   const optionsButtonRef = useRef(null)
@@ -414,12 +430,7 @@ export default function App() {
     <div className="app">
       <div className="rotate-device"><b>ROTATE YOUR DEVICE</b><p>หมุนเครื่องเป็นแนวนอนเพื่อเล่น</p></div>
       {screen === 'menu' && <StartScreen onStart={() => setScreen('mapselect')} onHiScores={() => { setNewScoreId(null); setScreen('hiscores') }} settings={settings} onSettings={updateSettings} />}
-      {screen === 'deploy' && (
-        <div className="screen menu deploy-screen" onClick={() => { playClick(); start(map) }}>
-          <p className="subtitle">{map.toUpperCase()}</p>
-          <button className="battle-btn" autoFocus>CLICK TO DEPLOY</button>
-        </div>
-      )}
+      {screen === 'deploy' && <DeployScreen map={map} onDeploy={() => start(map)} />}
       {screen === 'hiscores' && <HiScoreScreen onBack={toMenu} highlight={newScoreId} />}
       {screen === 'mapselect' && <MapSelect onPick={pickMap} onBack={toMenu} />}
       {(screen === 'game' || screen === 'gameover') && (

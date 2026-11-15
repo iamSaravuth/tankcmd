@@ -555,3 +555,14 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 }
 .menu-close:hover { border-color: #e0b64f; color: #f0d98c; }
 .hp-corner { position: absolute; top: max(16px, env(safe-area-inset-top)); right: max(20px, env(safe-area-inset-right)); z-index: 3; pointer-events: none; }
+
+/* ---- deploy screen (between battles) ---- */
+.deploy-screen { cursor: pointer; background: linear-gradient(90deg, #070906 0%, #09130b 50%, #080a07 100%); }
+.deploy-bg { object-position: 75% 50%; }
+/* narrower than the 2.2:1 art: show it whole along the bottom so the tank stays clear of the text */
+@media (max-aspect-ratio: 11/5) { .deploy-bg { object-fit: contain; object-position: 100% 100%; } }
+.deploy-ui { position: absolute; z-index: 2; left: 6%; top: 38%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: flex-start; }
+.deploy-map, .deploy-tank { margin: 0; font: 900 clamp(44px, 8vw, 150px)/1 Arial, Helvetica, sans-serif; letter-spacing: 0; text-shadow: 0 4px 18px #000a; }
+.deploy-map { color: #fff; }
+.deploy-tank { color: #c9b03c; }
+.deploy-screen .deploy-btn { margin-top: 2.6vw; padding: .3em 1.9em; font: 800 clamp(18px, 2.3vw, 36px) Arial, Helvetica, sans-serif; letter-spacing: 1px; color: #fff; text-shadow: 0 2px 3px #000a, 0 0 1px #000; }
