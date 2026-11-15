@@ -23,14 +23,14 @@ export default function Minimap({ game, onClose }) {
           const [x, y] = toMap(d.x, d.z)
           ctx.save()
           ctx.translate(x, y)
-          ctx.strokeStyle = d.type === 'hp' ? '#b9f078' : '#ffd28b'
+          ctx.strokeStyle = d.type === 'hp' ? '#b9f078' : d.type === 'speed' ? '#7fdcff' : '#ffd28b'
           ctx.fillStyle = '#101610e8'; ctx.lineWidth = 1.5
           ctx.setLineDash([2, 3])
           ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
           ctx.setLineDash([])
           ctx.fillStyle = ctx.strokeStyle
           ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-          ctx.fillText(d.type === 'hp' ? '+' : 'AP', 0, 0)
+          ctx.fillText(d.type === 'hp' ? '+' : d.type === 'speed' ? '»' : 'AP', 0, 0)
           ctx.restore()
         }
         // enemies

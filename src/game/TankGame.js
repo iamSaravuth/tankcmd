@@ -30,6 +30,7 @@ const FIRE_BUFFER = 0.5
 // the tank's top speed) and its acceleration (m/s²); the power cuts briefly per shift
 const GEARS = [{ top: 0.3, acc: 3.2 }, { top: 0.62, acc: 2.4 }, { top: 1, acc: 1.6 }]
 const TOP_SPEED = 1.3           // x SPEED -> ~65 km/h in 3rd
+const SPEED_UP = 1.35           // Speed-up airdrop: top speed + acceleration multiplier
 const REVERSE_TOP = 0.3, REVERSE_ACC = 2.5
 const SHIFT_TIME = 0.45, COAST_DECEL = 2.5, BRAKE_DECEL = 12
 // last kill: hold a slightly elevated shot of the final wreck before the win screen
@@ -1308,7 +1309,7 @@ export class TankGame {
     this.onHud({
       hp: this.player.hp, maxHp: MAX_HP, ammo: Infinity,
       kills: this.kills, total: this.enemies.length, theme: this.theme, bonus: this.bonus || 0,
-      apT: Math.ceil(this.player.apT || 0),
+      ap: this.player.apT > 0, spd: !!this.player.speedUp,
       hitArcs: this.hitArcs,
     })
   }
@@ -1687,7 +1688,16 @@ export class TankGame {
     this.explosions.push(group)
   }
 
+  // airdrop buffs have no timer: any hit strips them
+  clearBuffs(t) {
+    if (!(t.apT > 0) && !t.speedUp) return
+    t.apT = 0
+    t.speedUp = false
+    if (t === this.player) this.emitHud()
+  }
+
   damageEnemy(e, dmg, countHit = true) {
+    this.clearBuffs(e)
     e.hp -= dmg
     if (countHit) this.stats.hits++
     if (e.hp <= 0 && e.alive) {
@@ -1746,6 +1756,7 @@ export class TankGame {
   damagePlayer(dmg, fromDir) {
     if (this.over || this.playerDying || this.victory || this.player.respawnShield > 0) return
     this.player.hp = Math.max(0, this.player.hp - dmg)
+    this.clearBuffs(this.player)
     // attack-direction indicator: bearing to the attacker relative to the
     // aim direction — rel 0 = ahead, +90 = right, 180 = behind
     if (fromDir) {
@@ -1826,8 +1837,9 @@ export class TankGame {
   moveTank(obj, dirX, dirZ, dt) {
     const len = Math.hypot(dirX, dirZ)
     if (len < 1e-4) return false
-    const nx = obj.mesh.position.x + (dirX / len) * obj.speed * dt
-    const nz = obj.mesh.position.z + (dirZ / len) * obj.speed * dt
+    const sp = obj.speed * (obj !== this.player && obj.speedUp ? SPEED_UP : 1)
+    const nx = obj.mesh.position.x + (dirX / len) * sp * dt
+    const nz = obj.mesh.position.z + (dirZ / len) * sp * dt
     if (Math.abs(nx) > WORLD_HALF - 10 || Math.abs(nz) > WORLD_HALF - 10) return false
     if (isWater(nx, nz)) return false
     // rocks block movement — but always allow escaping if already overlapping:
@@ -1846,7 +1858,8 @@ export class TankGame {
 
   // automatic 3-speed gearbox: slow pull-away in 1st, then 2nd and 3rd as speed builds
   updateDrive(p, f, dt) {
-    const top = this.movementSpeed * TOP_SPEED
+    const boost = p.speedUp ? SPEED_UP : 1
+    const top = this.movementSpeed * TOP_SPEED * boost
     p.shiftT = Math.max(0, p.shiftT - dt)
     const v = p.vel
     if (f !== 0 && (v === 0 || Math.sign(f) === Math.sign(v))) {
@@ -1854,7 +1867,7 @@ export class TankGame {
         const g = GEARS[p.gear - 1]
         if (v >= g.top * top * 0.98 && p.gear < GEARS.length) { p.gear++; p.shiftT = SHIFT_TIME }
         const cur = GEARS[p.gear - 1]
-        if (p.shiftT === 0) p.vel = Math.min(v + cur.acc * Math.abs(f) * dt, cur.top * top * Math.abs(f))
+        if (p.shiftT === 0) p.vel = Math.min(v + cur.acc * boost * Math.abs(f) * dt, cur.top * top * Math.abs(f))
         if (p.vel < v) p.vel = Math.max(p.vel, v - COAST_DECEL * dt) // stick eased off
       } else {
         p.vel = Math.max(v - REVERSE_ACC * Math.abs(f) * dt, -REVERSE_TOP * top * Math.abs(f))
@@ -2532,6 +2545,10 @@ export class TankGame {
     if (type === 'hp') {
       c.fillStyle = '#e8e2d4'; c.beginPath(); c.arc(S / 2, S / 2, 52, 0, Math.PI * 2); c.fill()
       c.fillStyle = '#c4161c'; c.fillRect(S / 2 - 38, S / 2 - 12, 76, 24); c.fillRect(S / 2 - 12, S / 2 - 38, 24, 76)
+    } else if (type === 'speed') {
+      c.fillStyle = '#2fb8e8'; c.fillRect(F, S / 2 - 30, S - 2 * F, 60)
+      c.fillStyle = '#0d1a22'; c.font = 'bold 46px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'
+      c.fillText('SPD', S / 2, S / 2 + 2)
     } else {
       c.fillStyle = '#e0b021'; c.fillRect(F, S / 2 - 30, S - 2 * F, 60)
       c.fillStyle = '#1d1a14'; c.font = 'bold 46px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'
@@ -2557,6 +2574,17 @@ export class TankGame {
       const a = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.26, 0.26), red)
       const b = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.9, 0.26), red)
       icon.add(a, b)
+    } else if (type === 'speed') {
+      // ">>" chevrons
+      const blue = new THREE.MeshBasicMaterial({ color: 0x4fd2ff })
+      for (const x of [-0.22, 0.22]) {
+        for (const s of [1, -1]) {
+          const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.13, 0.13), blue)
+          bar.position.set(x, s * 0.15, 0)
+          bar.rotation.z = -s * Math.PI / 4
+          icon.add(bar)
+        }
+      }
     } else {
       const gold = new THREE.MeshBasicMaterial({ color: 0xffc832 })
       for (const dx of [-0.2, 0.2]) {
@@ -2584,7 +2612,7 @@ export class TankGame {
     const [ox, oz] = this.theme === 'snow' ? [-70, 90] : [0, 0]
     let sx = spot[0] + ox, sz = spot[1] + oz
     if (Math.abs(sx) > WORLD_HALF - 15 || Math.abs(sz) > WORLD_HALF - 15) { sx = spot[0]; sz = spot[1] }
-    const type = Math.random() < 0.5 ? 'hp' : 'ap'
+    const type = ['hp', 'ap', 'speed'][(Math.random() * 3) | 0]
     const mesh = this.buildDrop(type)
     mesh.position.set(sx, groundY(sx, sz), sz)
     this.scene.add(mesh)
@@ -2594,8 +2622,10 @@ export class TankGame {
   applyDrop(tank, type) {
     if (type === 'hp') {
       tank.hp = Math.min(MAX_HP, tank.hp + 40)
+    } else if (type === 'ap') {
+      tank.apT = 1 // attack power x2 — kept until this tank is hit
     } else {
-      tank.apT = 15 // attack power x2 for 15 seconds
+      tank.speedUp = true // faster drive — kept until this tank is hit
     }
     this.pickupBurst(tank.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)), type)
     this.sfx?.reload()
@@ -2603,7 +2633,7 @@ export class TankGame {
 
   // power-up pickup flash — bright glow, light pillar, ground ring, rising sparkles
   pickupBurst(pos, type) {
-    const col = type === 'hp' ? 0x7dffa0 : 0xffd060
+    const col = type === 'hp' ? 0x7dffa0 : type === 'speed' ? 0x5fd8ff : 0xffd060
     const grp = { t: 0, parts: [], sparkles: [] }
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: this.starburstTex(), color: col, blending: THREE.AdditiveBlending,
@@ -2655,7 +2685,6 @@ export class TankGame {
     const all = [this.player, ...this.enemies.filter((e) => e.alive)]
     for (const t of all) {
       if (t.hp <= 0) continue
-      t.apT = Math.max(0, (t.apT || 0) - dt)
       const p = t.mesh.position
       for (let i = this.drops.length - 1; i >= 0; i--) {
         const d = this.drops[i]
@@ -2668,9 +2697,6 @@ export class TankGame {
         }
       }
     }
-    // refresh HUD while the AP buff ticks down
-    const apNow = Math.ceil(this.player.apT || 0)
-    if (apNow !== this._lastAp) { this._lastAp = apNow; this.emitHud() }
     // keep a few drops available
     this.dropTimer -= dt
     if (this.dropTimer <= 0 && this.drops.length < 4) {

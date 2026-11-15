@@ -264,6 +264,8 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 .ap-badge { border-color: #c8962a; }
 .ap-badge span { color: #ffc832; letter-spacing: 2px; font-weight: bold; }
 .ap-badge b { color: #ffc832; }
+.spd-badge { border-color: #2fa8d8; }
+.spd-badge span, .spd-badge b { color: #6fd8ff; }
 .lock-hint {
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
   color: #9fb59a; font-size: 13px; letter-spacing: 2px; pointer-events: none;
