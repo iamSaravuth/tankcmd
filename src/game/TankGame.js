@@ -28,8 +28,8 @@ const MOUSE_SENS = 0.0022, TOUCH_SENS = 0.0045
 const FIRE_BUFFER = 0.5
 // player drivetrain: automatic 3-speed box — top speed of each gear (fraction of
 // the tank's top speed) and its acceleration (m/s²); the power cuts briefly per shift
-const GEARS = [{ top: 0.3, acc: 3.2 }, { top: 0.62, acc: 2.4 }, { top: 1, acc: 1.6 }]
-const TOP_SPEED = 1.3           // x SPEED -> ~65 km/h in 3rd
+const GEARS = [{ top: 0.3, acc: 4.8 }, { top: 0.62, acc: 3.6 }, { top: 1, acc: 2.4 }]
+const TOP_SPEED = 1.95          // x SPEED -> ~98 km/h in 3rd
 const SPEED_UP = 1.35           // Speed-up airdrop: top speed + acceleration multiplier
 const REVERSE_TOP = 0.3, REVERSE_ACC = 2.5
 const SHIFT_TIME = 0.45, COAST_DECEL = 2.5, BRAKE_DECEL = 12
@@ -2366,8 +2366,24 @@ export class TankGame {
     this.aimDir = aimDir
     const gun = p.mesh.userData.gun
     if (gun) gun.visible = false   // cupola view: the main gun would sit across the sight line
-    const eye = (gun ? gun.getWorldPosition(new THREE.Vector3()) : p.mesh.position.clone().add(new THREE.Vector3(0, 3.2, 0)))
-      .addScaledVector(aimDir, 1.2).add(new THREE.Vector3(0, 0.5, 0))
+    // gunner's eye at the tank's highest point (turret roof / cupola, antenna ignored), over the turret ring
+    const ud = p.mesh.userData
+    if (ud.topY === undefined) {
+      const skip = new Set(), box = new THREE.Box3(), mb = new THREE.Box3(), sz = new THREE.Vector3()
+      if (gun) gun.traverse((o) => skip.add(o))
+      p.mesh.updateMatrixWorld(true)
+      p.mesh.traverse((o) => {
+        if (!o.isMesh || skip.has(o) || !o.visible) return
+        if (/antenna/i.test(o.name)) return
+        mb.setFromObject(o).getSize(sz)
+        if (sz.x < 0.25 && sz.z < 0.25) return   // thin rods
+        box.union(mb)
+      })
+      ud.topY = box.isEmpty() ? 3.2 : box.max.y - p.mesh.position.y
+    }
+    const ring = (ud.turret ? ud.turret.getWorldPosition(new THREE.Vector3()) : p.mesh.position.clone())
+    const eye = ring.addScaledVector(new THREE.Vector3(aimDir.x, 0, aimDir.z).normalize(), 0.8)
+    eye.y = p.mesh.position.y + ud.topY + 0.1
     this.camera.position.copy(eye)
     this.camera.fov = THREE.MathUtils.damp(this.camera.fov, 32, 10, dt)
     this.camera.updateProjectionMatrix()

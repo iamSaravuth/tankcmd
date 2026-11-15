@@ -9,12 +9,12 @@ function ejectCase(wrap) {
   const c = document.createElement('i')
   c.className = 'm2-case'
   wrap.appendChild(c)
-  const dx = 90 + Math.random() * 110, up = 50 + Math.random() * 70, r = 360 + Math.random() * 720
+  const dx = 160 + Math.random() * 220, up = 90 + Math.random() * 130, r = 240 + Math.random() * 480
   c.animate([
-    { transform: 'translate(0, 0) rotate(0deg)' },
-    { transform: `translate(${dx * 0.55}px, ${-up}px) rotate(${r * 0.4}deg)`, offset: 0.3 },
-    { transform: `translate(${dx}px, 380px) rotate(${r}deg)` },
-  ], { duration: 650 + Math.random() * 250, easing: 'cubic-bezier(.3,0,.7,1)' }).onfinish = () => c.remove()
+    { transform: 'translate(0, 0) rotate(90deg)' },
+    { transform: `translate(${dx * 0.55}px, ${-up}px) rotate(${90 + r * 0.4}deg)`, offset: 0.3 },
+    { transform: `translate(${dx}px, 520px) rotate(${90 + r}deg)` },
+  ], { duration: 700 + Math.random() * 300, easing: 'cubic-bezier(.3,0,.7,1)' }).onfinish = () => c.remove()
 }
 
 export default function Game({ onEnd, onExit, resumeCount, inactive, map, settings, onSettings, playClick }) {
@@ -147,7 +147,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
           m2.shots = shots
           if (def && fresh > 0) {
             m2.at = now
-            m2.rot = Math.random() * 90
+            m2.rot = (Math.random() - 0.5) * 30
             for (let k = 0; k < Math.min(fresh, 3); k++) ejectCase(m2Ref.current)
           }
           const kick = def ? Math.max(0, 1 - (now - m2.at) / 90) : 0
@@ -168,7 +168,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
           if (m2FlashRef.current) {
             const on = def && (fresh > 0 || now - m2.at < 50)
             m2FlashRef.current.style.opacity = on ? '1' : '0'
-            if (on) m2FlashRef.current.style.transform = `translate(-50%, -50%) rotate(${m2.rot}deg) scale(${0.8 + Math.random() * 0.5})`
+            if (on) m2FlashRef.current.style.transform = `translate(-50%, -50%) rotate(${m2.rot}deg) scale(${(Math.random() < 0.5 ? -1 : 1) * (0.85 + Math.random() * 0.35)}, ${0.85 + Math.random() * 0.35})`
           }
         }
         if (gearRef.current) {
@@ -335,8 +335,8 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
       <div ref={reticleRef} className="reticle" />
       <div ref={droneSightRef} className="drone-sight" hidden aria-hidden="true">
         <div ref={m2Ref} className="m2-wrap">
-          <div ref={m2FlashRef} className="m2-flash" />
-          <img src={import.meta.env.BASE_URL + 'assets/m2.webp'} alt="" />
+          <img ref={m2FlashRef} className="m2-flash" src={import.meta.env.BASE_URL + 'assets/muzzleflash.webp'} alt="" />
+          <img className="m2-gun" src={import.meta.env.BASE_URL + 'assets/m2.webp'} alt="" />
         </div>
         <div className="drone-heat"><span>M2 HEAT</span><i><b ref={droneHeatRef} /></i><em ref={droneHeatLabelRef}>READY</em></div>
         
@@ -389,7 +389,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
           <span>R turret front</span><span>M map</span><span>Tab menu</span></>
         )}
         <span className="sep" />
-        <span>HP 100</span><span>Ammo ∞</span><span>Reload 5s</span><span>65 km/h</span>
+        <span>HP 100</span><span>Ammo ∞</span><span>Reload 5s</span><span>98 km/h</span>
       </div>
       {showMap && <Minimap game={gameRef} onClose={() => setShowMap(false)} />}
       {confirmQuit && (
