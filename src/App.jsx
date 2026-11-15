@@ -204,6 +204,8 @@ function StartScreen({ onStart, onHiScores, settings, onSettings }) {
     <div className="screen keyart">
       <img src={import.meta.env.BASE_URL + 'assets/menu.jpg'} className="menu-bg" alt="" />
       <div className="menu-bg-shade" />
+      <div className="menu-drone menu-drone-l" aria-hidden="true"><img src={import.meta.env.BASE_URL + 'assets/drone.png'} alt="" /></div>
+      <div className="menu-drone menu-drone-r" aria-hidden="true"><img src={import.meta.env.BASE_URL + 'assets/drone.png'} alt="" /></div>
       <EmberFX />
       <button className="menu-close" aria-label="Close" onClick={() => { playClick(); window.close(); setTimeout(() => { location.href = 'about:blank' }, 150) }}>✕</button>
       <div className="keyart-ui">

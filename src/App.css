@@ -93,6 +93,27 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
   position: absolute; inset: 0;
   background: linear-gradient(180deg, rgba(0,0,0,.15) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.55) 100%);
 }
+/* key-art drones: fly in from the screen edges, then hover in place forever */
+.menu-drone { position: absolute; z-index: 1; pointer-events: none; animation: drone-in 1.6s cubic-bezier(.2,.8,.25,1) both; }
+.menu-drone img { display: block; width: 100%; filter: drop-shadow(0 10px 14px rgba(0,0,0,.45)); animation: drone-hover 3.2s ease-in-out 1.6s infinite; }
+.menu-drone-l { left: 0.5%; top: 1.5%; width: clamp(130px, 18.5vw, 360px); --from: -130vw; --flip: -1; }
+.menu-drone-r { left: 74.5%; top: 42%; width: clamp(115px, 16.5vw, 320px); --from: 60vw; --flip: 1; animation-delay: .35s; }
+.menu-drone-r img { animation-duration: 3.8s; animation-delay: 1.95s; }
+.menu-drone img { transform: scaleX(var(--flip)); }
+@keyframes drone-in {
+  from { transform: translate(var(--from), -6vh) rotate(calc(var(--flip) * 8deg)); opacity: 0; }
+  20% { opacity: 1; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes drone-hover {
+  0%, 100% { transform: scaleX(var(--flip)) translate(0, 0) rotate(0deg); }
+  25% { transform: scaleX(var(--flip)) translate(-6px, -10px) rotate(-2deg); }
+  50% { transform: scaleX(var(--flip)) translate(0, -16px) rotate(0deg); }
+  75% { transform: scaleX(var(--flip)) translate(6px, -8px) rotate(2deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-drone, .menu-drone img { animation: none; }
+}
 .keyart-ui {
   position: relative; z-index: 2; height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
