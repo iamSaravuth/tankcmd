@@ -40,6 +40,9 @@ const VICTORY_HEIGHT = 9
 // on-screen warning radius (m), impact radius (m); damage = one enemy cannon shell
 const DRONES = { forest: 2, city: 3, snow: 5 }
 const DRONE_SPEED = 30, DRONE_ALT = 35, DRONE_WARN = 160, DRONE_HIT = 4.5
+// close-defence mode: the battle freezes at this range and the player shoots
+// the incoming drone down over the MG sight; it closes at DEF_SLOW of normal speed
+const DRONE_ENGAGE = 110, DEF_SLOW = 0.42, DEF_PITCH_UP = -1.15
 // AI difficulty per map: reload/spread/speed are multipliers, dmg = shell damage vs player, range = firing range (m)
 const AI_LEVELS = {
   forest: { reload: 1.4, spread: 1.6, speed: 0.85, dmg: 15, range: 200 }, // easy
@@ -1312,7 +1315,7 @@ export class TankGame {
     // makes it traverse the short way (aim behind = turret swings round the near side)
     p.targetYaw = p.yaw + delta
     // +pitch = barrel down; mouse/finger down → aim down (Invert Y flips it)
-    p.targetPitch = THREE.MathUtils.clamp(p.targetPitch + dy * sensitivity * ySign, PITCH_UP, PITCH_DOWN)
+    p.targetPitch = THREE.MathUtils.clamp(p.targetPitch + dy * sensitivity * ySign, this.droneMode ? DEF_PITCH_UP : PITCH_UP, PITCH_DOWN)
   }
 
   // world-space muzzle tip position: gun pivot + a barrel's length along the
@@ -2182,6 +2185,7 @@ export class TankGame {
   initDrones(side) {
     this.drones = []
     this.droneWarn = null
+    this.droneMode = null
     this._beepT = 0
     const n = DRONES[this.theme] ?? 3
     for (let i = 0; i < n; i++) {
@@ -2227,7 +2231,7 @@ export class TankGame {
     inner.updateMatrixWorld(true)
     const bb = new THREE.Box3().setFromObject(inner)
     const size = bb.getSize(new THREE.Vector3())
-    inner.scale.setScalar(3.6 / Math.max(size.x, size.z))
+    inner.scale.setScalar(6 / Math.max(size.x, size.z))
     inner.updateMatrixWorld(true)
     const ctr = new THREE.Box3().setFromObject(inner).getCenter(new THREE.Vector3())
     inner.position.sub(ctr)
@@ -2241,17 +2245,88 @@ export class TankGame {
     for (const c of g.userData.parts) g.remove(c)
     g.scale.setScalar(1)
     g.add(this.droneProto.clone(true))
-    g.userData.light.position.set(0, -0.15, 1.1)
-    g.userData.light.scale.setScalar(0.45)
+    g.userData.light.position.set(0, -0.25, 1.85)
+    g.userData.light.scale.setScalar(0.7)
     g.userData.glb = true
   }
 
   destroyDrone(d, hitPlayer = false) {
     if (d.state === 'dead') return
+    if (this.droneMode?.d === d && !hitPlayer) this.droneMode.killT = this.droneMode.t
     d.state = 'dead'
     this.explode(d.mesh.position.clone(), hitPlayer)
     this.sfx?.explode()
     this.scene.remove(d.mesh)
+  }
+
+  // freeze the battle and cut to the MG sight on the nearest incoming drone
+  startDroneDefense(d) {
+    d.engaged = true
+    this.droneMode = { d, t: 0 }
+    this.player.zoom = false
+    this.player.throttle = 0
+    this.player.vel = 0
+    this.sfx?.setEngine(false)
+    this.sfx?.beep()
+    // swing the sight near the drone so it is on screen, a few degrees off: the player still aims
+    const v = d.mesh.position.clone().sub(this.player.mesh.position.clone().add(new THREE.Vector3(0, 3.2, 0)))
+    this.player.targetYaw = Math.atan2(v.x, v.z) + (Math.random() - 0.5) * 0.22
+    this.player.targetPitch = THREE.MathUtils.clamp(-Math.atan2(v.y, Math.hypot(v.x, v.z)) + (Math.random() - 0.5) * 0.1, DEF_PITCH_UP, PITCH_DOWN)
+  }
+
+  endDroneDefense() {
+    this.droneMode = null
+    this.camera.fov = this.mobile ? 59 : 56
+    this.camera.updateProjectionMatrix()
+  }
+
+  // MG gunner view: turret snaps to the mouse, only the drone keeps moving
+  updateDroneDefense(dt) {
+    const m = this.droneMode, p = this.player, d = m.d
+    m.t += dt
+    if (this.playerDying || this.victory || p.hp <= 0) { this.endDroneDefense(); return }
+    p.yaw = p.targetYaw
+    p.pitch = p.targetPitch
+    this.setTurretYaw(p.mesh, p.yaw - p.hullYaw)
+    if (p.mesh.userData.gun) p.mesh.userData.gun.rotation.x = (p.mesh.userData.gunBase ?? Math.PI / 2) + p.pitch
+    p.mesh.visible = true
+
+    const aimDir = new THREE.Vector3(0, 0, 1).applyEuler(new THREE.Euler(p.pitch, p.yaw, 0, 'YXZ'))
+    this.aimDir = aimDir
+    const gun = p.mesh.userData.gun
+    const eye = (gun ? gun.getWorldPosition(new THREE.Vector3()) : p.mesh.position.clone().add(new THREE.Vector3(0, 3.2, 0)))
+      .addScaledVector(aimDir, 1.2).add(new THREE.Vector3(0, 0.5, 0))
+    this.camera.position.copy(eye)
+    this.camera.fov = THREE.MathUtils.damp(this.camera.fov, 32, 10, dt)
+    this.camera.updateProjectionMatrix()
+    this.cameraLookTarget.copy(eye).addScaledVector(aimDir, 200)
+    this.camera.lookAt(this.cameraLookTarget)
+    this.aimPoint = this.gunAimPoint = eye.clone().addScaledVector(aimDir, 400)
+    const ro = (this.reticleOffset ??= { x: 0, y: 0, on: false })
+    const co = (this.crosshairOffset ??= { x: 0, y: 0 })
+    ro.x = ro.y = co.x = co.y = 0; ro.on = false
+
+    if (d.state === 'dead') {        // shot down: hold a beat, then back to the battle
+      if (m.t > (m.killT ??= m.t) + 0.9) this.endDroneDefense()
+      return
+    }
+    const target = p.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
+    const pos = d.mesh.position
+    const want = target.clone().sub(pos).setLength(DRONE_SPEED * DEF_SLOW)
+    d.vel.lerp(want, 1 - Math.exp(-4 * dt))
+    pos.addScaledVector(d.vel, dt)
+    d.mesh.lookAt(pos.clone().add(d.vel))
+    d.life += dt
+    d.mesh.userData.light.visible = (d.life * 6) % 1 < 0.5
+    const dist = pos.distanceTo(target)
+    this.droneWarn = { dist, defense: true, eta: dist / Math.max(1, DRONE_SPEED * DEF_SLOW) }
+    this._beepT -= dt
+    if (this._beepT <= 0) { this.sfx?.beep(); this._beepT = 0.1 + 0.4 * dist / DRONE_ENGAGE }
+    if (dist < DRONE_HIT && !(p.respawnShield > 0)) {   // too slow: it rams home
+      this.destroyDrone(d, true)
+      this.damagePlayer(this.ai.dmg, d.vel.clone().negate())
+      this.endDroneDefense()
+    }
   }
 
   updateDrones(dt) {
@@ -2286,6 +2361,9 @@ export class TankGame {
       d.mesh.userData.light.visible = (d.life * 3) % 1 < 0.5
       const dist = pos.distanceTo(target)
       nearest = Math.min(nearest, dist)
+      if (!d.engaged && !this.droneMode && dist < DRONE_ENGAGE && !this.playerDying && !this.victory && p.hp > 0) {
+        this.startDroneDefense(d)
+      }
       if (dist < DRONE_HIT && !(p.respawnShield > 0)) {
         this.destroyDrone(d, true)
         this.damagePlayer(this.ai.dmg, d.vel.clone().negate())
@@ -2761,9 +2839,15 @@ export class TankGame {
         if (this.deathT > 2.8) this.finish(false)
       } else if (this.victory) {
         this.updateVictory(dt)
+      } else if (this.droneMode) {
+        this.updateDroneDefense(dt)
       } else if (this.player.hp > 0) {
         this.updatePlayer(dt)
       }
+      if (this.droneMode) {
+        this.updateBullets(dt)
+        this.updateMGFx(dt)
+      } else {
       for (const e of this.enemies) this.updateEnemy(e, dt)
       this.updateShells(dt)
       this.updateBullets(dt)
@@ -2773,6 +2857,7 @@ export class TankGame {
       for (const e of this.enemies) if (e.alive) this.updateTrackMarks(e)
       this.updateDrops(dt)
       this.updateDrones(dt)
+      }
     }
     this.updateTrees(dt)
     this.updateWrecks(dt)

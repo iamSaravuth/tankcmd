@@ -275,6 +275,13 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 .controls-caption { text-align: center; font-size: 10px; letter-spacing: 2px; margin: 12px 0 18px; color: #8e927e; }
 .controls-list { margin-bottom: 20px; }
 #panel-controls > .setting-row { margin-bottom: 12px; }
+.drone-sight { position: absolute; inset: 0; pointer-events: none; z-index: 5; color: rgba(255, 70, 50, .85); }
+.drone-sight[hidden] { display: none; }
+.drone-sight svg { width: 100%; height: 100%; }
+.drone-sight-top, .drone-sight-hint { position: absolute; left: 50%; transform: translateX(-50%); font: 800 16px Arial, sans-serif; letter-spacing: 3px; color: #ff3a30; text-shadow: 0 0 6px #000; white-space: nowrap; }
+.drone-sight-top { top: 13%; }
+.drone-sight-top b { color: #fff; margin-left: 10px; }
+.drone-sight-hint { top: 17.5%; font-size: 13px; color: #ffd0c8; letter-spacing: 2px; }
 .drone-warn { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; z-index: 6; color: #ff3a30; font: 800 16px Arial, sans-serif; letter-spacing: 3px; text-shadow: 0 0 6px #000, 0 0 2px #000; animation: droneBlink .5s steps(2, start) infinite; }
 .drone-warn[hidden] { display: none; }
 .drone-warn svg { width: 64px; height: 56px; filter: drop-shadow(0 0 10px rgba(255, 32, 16, .9)); }

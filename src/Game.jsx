@@ -13,6 +13,8 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
   const gearRef = useRef(null)
   const droneWarnRef = useRef(null)
   const droneDistRef = useRef(null)
+  const droneSightRef = useRef(null)
+  const droneEtaRef = useRef(null)
   const reticleRef = useRef(null)
   const crosshairRef = useRef(null)
   const scopeRef = useRef(null)
@@ -94,8 +96,11 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         }
         if (droneWarnRef.current) {
           const w = !g.paused && !g.over && g.droneWarn
-          droneWarnRef.current.hidden = !w
+          const def = !!(w && w.defense)
+          droneWarnRef.current.hidden = !w || def
           if (w && droneDistRef.current) droneDistRef.current.textContent = `${Math.round(w.dist)} m`
+          if (droneSightRef.current) droneSightRef.current.hidden = !def
+          if (def && droneEtaRef.current) droneEtaRef.current.textContent = `${Math.round(w.dist)} m · ${w.eta.toFixed(1)}s`
         }
         if (gearRef.current) {
           const v = g.player.vel || 0
@@ -259,6 +264,20 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
       </>}
       <div ref={crosshairRef} className="crosshair">+</div>
       <div ref={reticleRef} className="reticle" />
+      <div ref={droneSightRef} className="drone-sight" hidden aria-hidden="true">
+        <svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
+          <g fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="500" cy="500" r="150" /><circle cx="500" cy="500" r="300" strokeDasharray="14 22" />
+            <path d="M500 310v120 M500 570v120 M310 500h120 M570 500h120" />
+            {[-2, -1, 1, 2].map((n) => <path key={n} d={`M${500 + n * 75} 486v28 M486 ${500 + n * 75}h28`} />)}
+          </g>
+          <g fill="none" stroke="currentColor" strokeWidth="4">
+            <path d="M120 120h90 M120 120v90 M880 120h-90 M880 120v90 M120 880h90 M120 880v-90 M880 880h-90 M880 880v-90" />
+          </g>
+        </svg>
+        <div className="drone-sight-top">DRONE DEFENSE · MG <b ref={droneEtaRef}>0 m</b></div>
+        <div className="drone-sight-hint">SPACE / LMB — shoot it down</div>
+      </div>
       <div ref={droneWarnRef} className="drone-warn" role="alert" hidden>
         <svg viewBox="0 0 64 56" aria-hidden="true"><path d="M32 3 L61 53 H3 Z" fill="#e0201a" stroke="#fff" strokeWidth="3" strokeLinejoin="round" /><rect x="29" y="18" width="6" height="20" rx="2" fill="#fff" /><circle cx="32" cy="45" r="3.5" fill="#fff" /></svg>
         <span>DRONE <b ref={droneDistRef}>0 m</b></span>
