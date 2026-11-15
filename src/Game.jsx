@@ -269,6 +269,15 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
   }
 
   const hpPct = (hud.hp / hud.maxHp) * 100
+  const hpBox = (
+    <div className="hud-box hp-wide">
+      <span className="hud-label">HP</span>
+      <div className="hp-track">
+        <div className="hp-fill" style={{ width: `${hpPct}%`, background: hpPct > 40 ? '#4fe07a' : '#e04434' }} />
+        <span className="hp-num">{hud.hp}</span>
+      </div>
+    </div>
+  )
 
   return (
     <div className={`game-wrap${mobile ? ' mobile-game' : ''}`} inert={inactive}>
@@ -354,13 +363,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         </svg>
       ))}
       <div className="hud">
-        <div className="hud-box hp-wide">
-          <span className="hud-label">HP</span>
-          <div className="hp-track">
-            <div className="hp-fill" style={{ width: `${hpPct}%`, background: hpPct > 40 ? '#4fe07a' : '#e04434' }} />
-            <span className="hp-num">{hud.hp}</span>
-          </div>
-        </div>
+        {mobile && hpBox}
         <div className="hud-box"><span className="hud-label">AMMO</span><b>∞</b></div>
         {hud.ap && <div className="hud-box ap-badge"><span>AP ×2</span><b>ON</b></div>}
         {hud.spd && <div className="hud-box ap-badge spd-badge"><span>SPEED UP</span><b>ON</b></div>}
@@ -380,7 +383,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         <div className="reload-track"><div ref={mgFillRef} className="reload-fill" style={{ width: 0 }} /></div>
         <span ref={mgLabelRef} className="reload-label">READY</span>
       </div>
-      <div className="hp-corner"><span>HP</span><b>{hud.hp}</b></div>
+      {!mobile && <div className="hp-corner">{hpBox}</div>}
       {showMap && <Minimap game={gameRef} onClose={() => setShowMap(false)} />}
       {confirmQuit && (
         <div className="quit-overlay">
