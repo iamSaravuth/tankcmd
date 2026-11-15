@@ -6,9 +6,11 @@ import OptionsDialog from './components/OptionsDialog'
 // spent .50 BMG case flung out of the M2 receiver (pure DOM, removed when it lands)
 function ejectCase(wrap) {
   if (!wrap || !wrap.animate) return
-  const c = document.createElement('i')
+  const c = document.createElement('img')
   c.className = 'm2-case'
-  wrap.appendChild(c)
+  c.src = import.meta.env.BASE_URL + 'assets/bullet50.png'
+  c.alt = ''
+  wrap.insertBefore(c, wrap.querySelector('.m2-gun'))
   const dx = 420 + Math.random() * 320, up = 170 + Math.random() * 150, r = 300 + Math.random() * 540
   c.animate([
     { transform: 'translate(0, 0) rotate(90deg)' },
