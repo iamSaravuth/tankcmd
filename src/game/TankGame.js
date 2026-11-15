@@ -36,6 +36,10 @@ const SHIFT_TIME = 0.45, COAST_DECEL = 2.5, BRAKE_DECEL = 12
 const VICTORY_HOLD = 10         // seconds
 const VICTORY_DIST = 24
 const VICTORY_HEIGHT = 9
+// enemy kamikaze drones: count per map (difficulty), cruise speed (m/s), altitude,
+// on-screen warning radius (m), impact radius (m); damage = one enemy cannon shell
+const DRONES = { forest: 2, city: 3, snow: 5 }
+const DRONE_SPEED = 30, DRONE_ALT = 35, DRONE_WARN = 160, DRONE_HIT = 4.5
 // AI difficulty per map: reload/spread/speed are multipliers, dmg = shell damage vs player, range = firing range (m)
 const AI_LEVELS = {
   forest: { reload: 1.4, spread: 1.6, speed: 0.85, dmg: 15, range: 200 }, // easy
@@ -365,6 +369,7 @@ export class TankGame {
 
     // initial supply drops
     for (let i = 0; i < 3; i++) this.spawnDrop()
+    this.initDrones(spawnAng + Math.PI)
 
     this.kills = 0
     this.emitHud()
@@ -1525,6 +1530,13 @@ export class TankGame {
       if (!hit && bp.y <= heightAt(bp.x, bp.z)) { bp.y = heightAt(bp.x, bp.z) + 0.1; hit = 'ground' }
       if (!hit) {
         seg.set(prev, bp)
+        for (const d of this.drones) {
+          if (d.state !== 'fly') continue
+          seg.closestPointToPoint(d.mesh.position, true, cp)
+          if (cp.distanceTo(d.mesh.position) < 2.2) { bp.copy(cp); this.destroyDrone(d); hit = 'tank'; break }
+        }
+      }
+      if (!hit) {
         for (const e of this.enemies) {
           if (!e.alive) continue
           const c = e.mesh.position.clone(); c.y += 2.4
@@ -2159,6 +2171,104 @@ export class TankGame {
     }
   }
 
+  // --- enemy kamikaze drones ---
+  // launched one by one from the enemy side; cruise high, then dive onto the player
+  initDrones(side) {
+    this.drones = []
+    this.droneWarn = null
+    this._beepT = 0
+    const n = DRONES[this.theme] ?? 3
+    for (let i = 0; i < n; i++) {
+      const mesh = this.buildDroneMesh()
+      const a = side + (Math.random() - 0.5) * 1.2, r = 470
+      const x = Math.sin(a) * r, z = Math.cos(a) * r
+      mesh.position.set(x, groundY(x, z) + DRONE_ALT, z)
+      mesh.visible = false
+      this.scene.add(mesh)
+      this.drones.push({ mesh, state: 'wait', launchT: 18 + i * 12 + Math.random() * 6, life: 0, vel: new THREE.Vector3() })
+    }
+  }
+
+  // Shahed-style delta-wing loitering munition
+  buildDroneMesh() {
+    const g = new THREE.Group()
+    const mat = (this._droneMat ??= new THREE.MeshStandardMaterial({ color: 0x3b3f42, roughness: 0.7, metalness: 0.2 }))
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 3.6, 10).rotateX(Math.PI / 2), mat)
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.9, 10).rotateX(Math.PI / 2).translate(0, 0, 2.25), mat)
+    const wingShape = new THREE.Shape([new THREE.Vector2(0, 1.2), new THREE.Vector2(1.9, -1.6), new THREE.Vector2(-1.9, -1.6)])
+    const wing = new THREE.Mesh(new THREE.ExtrudeGeometry(wingShape, { depth: 0.08, bevelEnabled: false }).rotateX(Math.PI / 2), mat)
+    for (const sx of [-1, 1]) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.7, 0.6), mat)
+      fin.position.set(sx * 1.8, 0.3, -1.4)
+      g.add(fin)
+    }
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2020 }))
+    light.position.set(0, 0.35, 0.6)
+    g.add(body, nose, wing, light)
+    g.userData.light = light
+    g.scale.setScalar(1.4)
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true })
+    return g
+  }
+
+  destroyDrone(d, hitPlayer = false) {
+    if (d.state === 'dead') return
+    d.state = 'dead'
+    this.explode(d.mesh.position.clone(), hitPlayer)
+    this.sfx?.explode()
+    this.scene.remove(d.mesh)
+  }
+
+  updateDrones(dt) {
+    this.droneWarn = null
+    if (!this.drones?.length) return
+    const p = this.player
+    if (this.victory || this.playerDying || p.hp <= 0) {
+      for (const d of this.drones) d.mesh.visible = false
+      return
+    }
+    const target = p.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
+    let nearest = Infinity
+    for (const d of this.drones) {
+      if (d.state === 'dead') continue
+      if (d.state === 'wait') {
+        d.launchT -= dt
+        if (d.launchT > 0) continue
+        d.state = 'fly'
+        d.mesh.visible = true
+        d.vel.subVectors(target, d.mesh.position).setY(0).setLength(DRONE_SPEED)
+      }
+      const pos = d.mesh.position, prev = pos.clone()
+      const flat = Math.hypot(target.x - pos.x, target.z - pos.z)
+      // cruise at altitude, dive once within ~90 m
+      const aim = target.clone()
+      if (flat > 90) aim.y = Math.max(groundY(pos.x, pos.z), target.y) + DRONE_ALT
+      const want = aim.sub(pos).setLength(DRONE_SPEED * (flat > 90 ? 1 : 1.25))
+      d.vel.lerp(want, 1 - Math.exp(-(flat > 90 ? 1.5 : 4) * dt))
+      pos.addScaledVector(d.vel, dt)
+      d.mesh.lookAt(pos.clone().add(d.vel))
+      d.life += dt
+      d.mesh.userData.light.visible = (d.life * 3) % 1 < 0.5
+      const dist = pos.distanceTo(target)
+      nearest = Math.min(nearest, dist)
+      if (dist < DRONE_HIT && !(p.respawnShield > 0)) {
+        this.destroyDrone(d, true)
+        this.damagePlayer(this.ai.dmg, d.vel.clone().negate())
+      } else if (pos.y <= heightAt(pos.x, pos.z) + 0.5 || d.life > 120 ||
+        (this.theme === 'city' && this.hitBuildingWall(prev, pos))) {
+        this.destroyDrone(d)
+      }
+    }
+    if (nearest < DRONE_WARN) {
+      this.droneWarn = { dist: nearest }
+      this._beepT -= dt
+      if (this._beepT <= 0) {
+        this.sfx?.beep()
+        this._beepT = 0.15 + 0.85 * nearest / DRONE_WARN // faster beeps as it closes in
+      }
+    } else this._beepT = 0
+  }
+
   // --- airdrop supply crates ---
   // nearest clear, dry spot to (x, z): searched in growing rings; keeps far enough
   // from rocks/buildings that the spawn rock-clearing never deletes a building collider
@@ -2485,7 +2595,10 @@ export class TankGame {
       }
       if (!dead) {
         if (s.owner === 'player') {
-          for (const e of this.enemies) {
+          for (const d of this.drones) {
+            if (d.state === 'fly' && sp.distanceTo(d.mesh.position) < 3) { this.destroyDrone(d); dead = true; cause = 'drone'; break }
+          }
+          for (const e of dead ? [] : this.enemies) {
             if (!e.alive) continue
             if (sp.distanceTo(e.mesh.position.clone().add(new THREE.Vector3(0, 2.4, 0))) < e.radius + 0.6) {
               this.damageEnemy(e, DMG_PLAYER * (this.player.apT > 0 ? 2 : 1))
@@ -2624,6 +2737,7 @@ export class TankGame {
       if (!this.playerDying) this.updateTrackMarks(this.player)
       for (const e of this.enemies) if (e.alive) this.updateTrackMarks(e)
       this.updateDrops(dt)
+      this.updateDrones(dt)
     }
     this.updateTrees(dt)
     this.updateWrecks(dt)

@@ -11,6 +11,8 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
   const mgFillRef = useRef(null)
   const mgLabelRef = useRef(null)
   const gearRef = useRef(null)
+  const droneWarnRef = useRef(null)
+  const droneDistRef = useRef(null)
   const reticleRef = useRef(null)
   const crosshairRef = useRef(null)
   const scopeRef = useRef(null)
@@ -89,6 +91,11 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         reloadFillRef.current.style.background = frac >= 1 ? '#4fe07a' : '#d8a03c'
         if (reloadLabelRef.current) {
           reloadLabelRef.current.textContent = frac >= 1 ? 'READY' : `${g.player.cooldown.toFixed(1)}s`
+        }
+        if (droneWarnRef.current) {
+          const w = !g.paused && !g.over && g.droneWarn
+          droneWarnRef.current.hidden = !w
+          if (w && droneDistRef.current) droneDistRef.current.textContent = `${Math.round(w.dist)} m`
         }
         if (gearRef.current) {
           const v = g.player.vel || 0
@@ -252,6 +259,10 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
       </>}
       <div ref={crosshairRef} className="crosshair">+</div>
       <div ref={reticleRef} className="reticle" />
+      <div ref={droneWarnRef} className="drone-warn" role="alert" hidden>
+        <svg viewBox="0 0 64 56" aria-hidden="true"><path d="M32 3 L61 53 H3 Z" fill="#e0201a" stroke="#fff" strokeWidth="3" strokeLinejoin="round" /><rect x="29" y="18" width="6" height="20" rx="2" fill="#fff" /><circle cx="32" cy="45" r="3.5" fill="#fff" /></svg>
+        <span>DRONE <b ref={droneDistRef}>0 m</b></span>
+      </div>
       {arcs.map((a) => (
         <svg key={a.id} className="hit-arc" viewBox="0 0 260 260"
           style={{ transform: `translate(-50%, -50%) rotate(${a.rel}rad)` }}>

@@ -275,6 +275,11 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 .controls-caption { text-align: center; font-size: 10px; letter-spacing: 2px; margin: 12px 0 18px; color: #8e927e; }
 .controls-list { margin-bottom: 20px; }
 #panel-controls > .setting-row { margin-bottom: 12px; }
+.drone-warn { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; z-index: 6; color: #ff3a30; font: 800 16px Arial, sans-serif; letter-spacing: 3px; text-shadow: 0 0 6px #000, 0 0 2px #000; animation: droneBlink .5s steps(2, start) infinite; }
+.drone-warn[hidden] { display: none; }
+.drone-warn svg { width: 64px; height: 56px; filter: drop-shadow(0 0 10px rgba(255, 32, 16, .9)); }
+.drone-warn b { color: #fff; }
+@keyframes droneBlink { to { visibility: hidden; } }
 .gear-val { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .controls-list > div { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 12px 0; line-height: 1.5; font-size: clamp(12px, 2vw, 16px); }
 .controls-list dd { color: #e5dfc8; }

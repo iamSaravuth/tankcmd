@@ -41,6 +41,13 @@ export default function Minimap({ game, onClose }) {
           ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill()
           ctx.strokeStyle = '#fff'; ctx.stroke()
         }
+        // kamikaze drones in flight
+        for (const d of g.drones || []) {
+          if (d.state !== 'fly') continue
+          const [x, y] = toMap(d.mesh.position.x, d.mesh.position.z)
+          ctx.fillStyle = '#ff8a1c'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1
+          ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y + 4); ctx.lineTo(x - 5, y + 4); ctx.closePath(); ctx.fill(); ctx.stroke()
+        }
         // player
         const [px, py] = toMap(g.player.mesh.position.x, g.player.mesh.position.z)
         ctx.fillStyle = '#39d353'

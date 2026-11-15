@@ -158,6 +158,18 @@ export class SoundFX {
     nz.start(t)
   }
 
+  // drone proximity warning: short high square-wave beep
+  beep() {
+    const t = this.ctx.currentTime
+    const o = this.ctx.createOscillator()
+    o.type = 'square'; o.frequency.value = 1450
+    const g = this.ctx.createGain()
+    g.gain.setValueAtTime(0.18, t)
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.09)
+    o.connect(g).connect(this.fx)
+    o.start(t); o.stop(t + 0.1)
+  }
+
   // tree fall: crackling down-sweep (throttled — tanks can fell many trees at once)
   treeFall() {
     const t = this.ctx.currentTime
