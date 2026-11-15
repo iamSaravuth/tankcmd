@@ -20,7 +20,7 @@ const sessionId = newId()
 export function track(event, data = {}) {
   if (!ENDPOINT) return
   const body = JSON.stringify({
-    event, ...data,
+    game: 'tankcmd', event, ...data,
     visitorId: visitorId(), sessionId,
     ts: new Date().toISOString(),
     page: location.pathname, referrer: document.referrer || null,
