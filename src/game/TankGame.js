@@ -411,17 +411,18 @@ export class TankGame {
         if (e.target === this.renderer.domElement) {
           this.renderer.domElement.requestPointerLock()?.catch?.(() => {})
         } else if (!(e.button === 0 && this.player.zoom)) return
-        if (e.button === 0) this.firePlayer()
-        if (e.button === 2) this.player.zoom = true
+        this.pressMouse(e.button)
         return
       }
-      if (e.button === 0) this.firePlayer()
-      if (e.button === 2) this.player.zoom = true   // hold RMB = sniper zoom
+      this.pressMouse(e.button)
     }
     // a 2nd button pressed while one is held (LMB while RMB-scoped) fires no
     // pointerdown — browsers report the chord as pointermove with button set
     this._pm = (e) => { if (e.pointerType === 'mouse' && e.button >= 0) this._md(e) }
-    this._mu = (e) => { if (e.button === 2) this.player.zoom = false }
+    this._mu = (e) => {
+      if (e.button === 2) this.player.zoom = false
+      if (e.button === 0) this.mgMouse = false
+    }
     this._cm = (e) => e.preventDefault()
     this._wh = (e) => {   // wheel zooms third-person distance (WoT-style)
       this.player.camDist = THREE.MathUtils.clamp(this.player.camDist + e.deltaY * 0.02, 7, 32)
@@ -1393,6 +1394,16 @@ export class TankGame {
     }
   }
 
+  // drone defense: LMB is the MG trigger (hold), not the cannon; no sniper scope
+  pressMouse(button) {
+    if (this.droneMode) {
+      if (button === 0) this.mgMouse = true
+      return
+    }
+    if (button === 0) this.firePlayer()
+    if (button === 2) this.player.zoom = true   // hold RMB = sniper zoom
+  }
+
   firePlayer() {
     const p = this.player
     if (this.paused || this.over || this.playerDying || this.victory) return
@@ -1452,7 +1463,7 @@ export class TankGame {
     const p = this.player
     p.mgHeat ??= 0
     p.mgT = Math.max(0, (p.mgT || 0) - dt)
-    const trigger = (this.keys.Space || this.mgTouch) && !this.paused && !this.over && !this.playerDying
+    const trigger = (this.keys.Space || this.mgTouch || (this.mgMouse && this.droneMode)) && !this.paused && !this.over && !this.playerDying
     if (p.mgOver) {
       p.mgHeat = Math.max(0, p.mgHeat - dt / MG_COOL)
       if (p.mgHeat === 0) p.mgOver = false
@@ -2276,6 +2287,7 @@ export class TankGame {
 
   endDroneDefense() {
     this.droneMode = null
+    this.mgMouse = false
     this.camera.fov = this.mobile ? 59 : 56
     this.camera.updateProjectionMatrix()
   }
@@ -2305,6 +2317,7 @@ export class TankGame {
     const ro = (this.reticleOffset ??= { x: 0, y: 0, on: false })
     const co = (this.crosshairOffset ??= { x: 0, y: 0 })
     ro.x = ro.y = co.x = co.y = 0; ro.on = false
+    this.updateMG(dt)
 
     if (d.state === 'dead') {        // shot down: hold a beat, then back to the battle
       if (m.t > (m.killT ??= m.t) + 0.9) this.endDroneDefense()
