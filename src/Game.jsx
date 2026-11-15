@@ -9,12 +9,12 @@ function ejectCase(wrap) {
   const c = document.createElement('i')
   c.className = 'm2-case'
   wrap.appendChild(c)
-  const dx = 160 + Math.random() * 220, up = 90 + Math.random() * 130, r = 240 + Math.random() * 480
+  const dx = 420 + Math.random() * 320, up = 170 + Math.random() * 150, r = 300 + Math.random() * 540
   c.animate([
     { transform: 'translate(0, 0) rotate(90deg)' },
     { transform: `translate(${dx * 0.55}px, ${-up}px) rotate(${90 + r * 0.4}deg)`, offset: 0.3 },
-    { transform: `translate(${dx}px, 520px) rotate(${90 + r}deg)` },
-  ], { duration: 700 + Math.random() * 300, easing: 'cubic-bezier(.3,0,.7,1)' }).onfinish = () => c.remove()
+    { transform: `translate(${dx}px, 620px) rotate(${90 + r}deg)` },
+  ], { duration: 850 + Math.random() * 300, easing: 'cubic-bezier(.3,0,.7,1)' }).onfinish = () => c.remove()
 }
 
 export default function Game({ onEnd, onExit, resumeCount, inactive, map, settings, onSettings, playClick }) {

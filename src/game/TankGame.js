@@ -17,6 +17,7 @@ const DMG_PLAYER = 34           // player shell damage vs AI
 const MG_ROUNDS_PER_SHELL = 20
 const MG_DMG = DMG_PLAYER / MG_ROUNDS_PER_SHELL
 const MG_RATE = 10              // rounds / second
+const DEF_MG_RATE = 5           // drone defense M2 .50: slow heavy thump
 const MG_SPEED = 320
 export const MG_COOL = RELOAD_TIME // forced cool-down after overheating = cannon reload
 // player aiming (WoT-style: the view orbits freely 360°, the turret slews after it
@@ -1507,7 +1508,7 @@ export class TankGame {
     } else if (trigger) {
       while (p.mgT <= 0 && !p.mgOver) {
         this.fireMG()
-        p.mgT += 1 / MG_RATE
+        p.mgT += 1 / (this.droneMode ? DEF_MG_RATE : MG_RATE)
         p.mgHeat = Math.min(1, p.mgHeat + 1 / MG_ROUNDS_PER_SHELL)
         if (p.mgHeat >= 1) p.mgOver = true
       }
