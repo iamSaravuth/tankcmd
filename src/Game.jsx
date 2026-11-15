@@ -380,17 +380,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         <div className="reload-track"><div ref={mgFillRef} className="reload-fill" style={{ width: 0 }} /></div>
         <span ref={mgLabelRef} className="reload-label">READY</span>
       </div>
-      <div className="control-guide">
-        {mobile ? (
-          <><span>Stick drive</span><span>Drag aim</span><span>FIRE</span><span>MG / Space hold</span><span>AIM zoom</span><span>MAP</span><span>↺ turret</span></>
-        ) : (
-          <><span>W/S drive</span><span>A/D hull</span><span>Mouse turret</span>
-          <span>LMB fire</span><span>Space MG</span><span>RMB sniper</span><span>Wheel zoom</span>
-          <span>R turret front</span><span>M map</span><span>Tab menu</span></>
-        )}
-        <span className="sep" />
-        <span>HP 100</span><span>Ammo ∞</span><span>Reload 5s</span><span>98 km/h</span>
-      </div>
+      <div className="hp-corner"><span>HP</span><b>{hud.hp}</b></div>
       {showMap && <Minimap game={gameRef} onClose={() => setShowMap(false)} />}
       {confirmQuit && (
         <div className="quit-overlay">
