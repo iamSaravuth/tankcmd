@@ -303,6 +303,27 @@ html, body, #root, .app { width: 100%; height: 100%; overflow: hidden; font-fami
 .drone-sight-top { top: 13%; }
 .drone-sight-top b { color: #fff; margin-left: 10px; }
 .drone-sight-hint { top: 17.5%; font-size: 13px; color: #ffd0c8; letter-spacing: 2px; }
+.score-pop { position: absolute; z-index: 6; pointer-events: none; transform: translate(-50%, -50%); font: 900 34px Arial, sans-serif; color: #ffd54a; letter-spacing: 1px;
+  text-shadow: 0 0 10px rgba(255,190,40,.8), 0 2px 0 #7a4b00, 0 3px 6px #000; animation: score-pop 1.3s ease-out forwards; }
+@keyframes score-pop {
+  0% { transform: translate(-50%, -50%) scale(.4); opacity: 0; }
+  15% { transform: translate(-50%, -70%) scale(1.25); opacity: 1; }
+  30% { transform: translate(-50%, -80%) scale(1); }
+  100% { transform: translate(-50%, -260%) scale(1); opacity: 0; }
+}
+.m2-wrap { position: absolute; left: 50%; bottom: 0; width: min(48vw, 86vh); transform: translateX(-50%); transform-origin: 50% 100%; }
+.m2-wrap img { display: block; width: 100%; filter: drop-shadow(0 -6px 18px rgba(0,0,0,.35)); }
+.m2-flash { position: absolute; left: 50%; top: 22%; width: 34%; aspect-ratio: 1; opacity: 0; mix-blend-mode: screen;
+  background: radial-gradient(circle, #fff 0 8%, #ffe08a 14%, rgba(255,140,40,.85) 26%, rgba(255,60,20,0) 50%);
+  clip-path: polygon(50% 0, 58% 38%, 100% 50%, 58% 62%, 50% 100%, 42% 62%, 0 50%, 42% 38%); }
+.m2-case { position: absolute; left: 64%; top: 60%; width: 1.1%; height: 4.2%; border-radius: 2px 2px 1px 1px;
+  background: linear-gradient(90deg, #7a5718, #f3cf6a 45%, #a87a22); box-shadow: 0 0 2px #0008; }
+.drone-heat { position: absolute; left: 3%; bottom: 6%; display: flex; align-items: center; gap: 10px; font: 800 13px Arial, sans-serif; letter-spacing: 2px; color: #fff; text-shadow: 0 1px 3px #000;
+  background: rgba(10,12,14,.55); border: 1px solid rgba(255,255,255,.25); padding: 8px 12px; border-radius: 4px; }
+.drone-heat i { display: block; width: 180px; height: 10px; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; }
+.drone-heat b { display: block; height: 100%; width: 0; }
+.drone-heat em { font-style: normal; min-width: 120px; }
+.drone-mode > .hud, .drone-mode > .reload-wrap, .drone-mode > .control-guide, .drone-mode > .reticle { visibility: hidden; }
 .drone-warn { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; z-index: 6; color: #ff3a30; font: 800 16px Arial, sans-serif; letter-spacing: 3px; text-shadow: 0 0 6px #000, 0 0 2px #000; animation: droneBlink .5s steps(2, start) infinite; }
 .drone-warn[hidden] { display: none; }
 .drone-warn svg { width: 64px; height: 56px; filter: drop-shadow(0 0 10px rgba(255, 32, 16, .9)); }

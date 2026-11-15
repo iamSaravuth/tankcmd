@@ -39,10 +39,16 @@ const VICTORY_HEIGHT = 9
 // enemy kamikaze drones: count per map (difficulty), cruise speed (m/s), altitude,
 // on-screen warning radius (m), impact radius (m); damage = one enemy cannon shell
 const DRONES = { forest: 2, city: 3, snow: 5 }
-const DRONE_SPEED = 30, DRONE_ALT = 35, DRONE_WARN = 160, DRONE_HIT = 4.5
+const DRONE_SPEED = 30, DRONE_ALT = 35, DRONE_WARN = 320, DRONE_HIT = 4.5
 // close-defence mode: the battle freezes at this range and the player shoots
 // the incoming drone down over the MG sight; it closes at DEF_SLOW of normal speed
-const DRONE_ENGAGE = 110, DEF_SLOW = 0.42, DEF_PITCH_UP = -1.15
+const DRONE_ENGAGE = 260, DEF_PITCH_UP = -1.15
+// per difficulty: T = seconds from engage to impact, weave amplitude (m) / frequency (Hz), climb/dive swing (m)
+const DEF = {
+  forest: { T: 26, amp: 22, f: 0.3, v: 6 },
+  city: { T: 23, amp: 34, f: 0.45, v: 9 },
+  snow: { T: 20, amp: 48, f: 0.65, v: 12 },
+}
 // AI difficulty per map: reload/spread/speed are multipliers, dmg = shell damage vs player, range = firing range (m)
 const AI_LEVELS = {
   forest: { reload: 1.4, spread: 1.6, speed: 0.85, dmg: 15, range: 200 }, // easy
@@ -133,6 +139,7 @@ function groundY(x, z) {
 
 // tanks are ~15 units long (a ~9.5 m MBT incl. gun): wrecked cars use the same units-per-metre
 const CAR_SCALE = 1.6
+const CRUSH_PTS = 100 // bonus for running over a car wreck with the player tank
 const PLAYER_TANK_LEN = 15 // m48a5.glb long axis for the player
 // police-wrecks.glb / barricade.glb: half the player M48A5's length
 const WRECK_GLB_LEN = PLAYER_TANK_LEN * 0.5
@@ -375,6 +382,7 @@ export class TankGame {
     this.initDrones(spawnAng + Math.PI)
 
     this.kills = 0
+    this.bonus = 0
     this.emitHud()
     this.player.mesh.rotation.order = 'YXZ'
 
@@ -1010,6 +1018,15 @@ export class TankGame {
     this.fireSpots.push({ x: c.x, y: heightAt(c.x, c.z) + CAR_SCALE, z: c.z, t: 0, dur: 14 })
   }
 
+  crushBonus(c) {
+    this.bonus = (this.bonus || 0) + CRUSH_PTS
+    this.sfx?.score()
+    const v = c.mesh.position.clone().add(new THREE.Vector3(0, 3, 0)).project(this.camera)
+    const r = this.renderer.domElement.getBoundingClientRect()
+    if (Math.abs(v.z) < 1) this.onPop?.((v.x * 0.5 + 0.5) * r.width, (-v.y * 0.5 + 0.5) * r.height, `+${CRUSH_PTS}`)
+    this.emitHud()
+  }
+
   buildTrackMarks() {
     const cv = document.createElement('canvas')
     cv.width = 64; cv.height = 64
@@ -1290,7 +1307,7 @@ export class TankGame {
   emitHud() {
     this.onHud({
       hp: this.player.hp, maxHp: MAX_HP, ammo: Infinity,
-      kills: this.kills, total: this.enemies.length, theme: this.theme,
+      kills: this.kills, total: this.enemies.length, theme: this.theme, bonus: this.bonus || 0,
       apT: Math.ceil(this.player.apT || 0),
       hitArcs: this.hitArcs,
     })
@@ -1511,19 +1528,23 @@ export class TankGame {
     const target = (p.zoom ? this.aimPoint : this.gunAimPoint || this.aimPoint)?.clone() || from.clone().addScaledVector(this.aimDir, 500)
     const dir = target.sub(from).normalize()
     const side = new THREE.Vector3().crossVectors(dir, this._up ??= new THREE.Vector3(0, 1, 0)).normalize()
-    const sp = 0.008 + p.dispersion * 0.02
+    const sp = (0.008 + p.dispersion * 0.02) * (this.droneMode ? 0.6 : 1)
     dir.x += (Math.random() - 0.5) * sp * 2
     dir.y += (Math.random() - 0.5) * sp
     dir.z += (Math.random() - 0.5) * sp * 2
     dir.normalize()
-    // mounted beside the main gun in the mantlet
-    const muzzle = from.addScaledVector(side, 0.9).addScaledVector(dir, 4.5)
-    const m = new THREE.Mesh(this._mgGeo ??= new THREE.BoxGeometry(0.14, 0.14, 3), this.mgMaterial())
+    this.mgShots = (this.mgShots || 0) + 1
+    // drone defense: cupola M2 just under the sight line, red tracers; otherwise the coax in the mantlet
+    const def = !!this.droneMode
+    const muzzle = def ? this.camera.position.clone().add(new THREE.Vector3(0, -0.45, 0)).addScaledVector(dir, 2.2)
+      : from.addScaledVector(side, 0.9).addScaledVector(dir, 4.5)
+    const m = new THREE.Mesh(this._mgGeo ??= new THREE.BoxGeometry(0.14, 0.14, 3),
+      def ? (this._mgRedMat ??= new THREE.MeshBasicMaterial({ color: 0xff2a14, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })) : this.mgMaterial())
     m.position.copy(muzzle)
     m.lookAt(muzzle.clone().add(dir))
     this.scene.add(m)
     this.bullets.push({ mesh: m, vel: dir.clone().multiplyScalar(MG_SPEED), life: 1.6 })
-    this.mgFxBurst(muzzle, 1, 'flash')
+    if (!def) this.mgFxBurst(muzzle, 1, 'flash')
   }
 
   // kind: 'spark' (hot fragments), 'dust' (puff), 'flash' (muzzle)
@@ -1572,7 +1593,7 @@ export class TankGame {
         for (const d of this.drones) {
           if (d.state !== 'fly') continue
           seg.closestPointToPoint(d.mesh.position, true, cp)
-          if (cp.distanceTo(d.mesh.position) < 2.2) { bp.copy(cp); this.destroyDrone(d); hit = 'tank'; break }
+          if (cp.distanceTo(d.mesh.position) < 3) { bp.copy(cp); this.destroyDrone(d); hit = 'tank'; break }
         }
       }
       if (!hit) {
@@ -1798,7 +1819,7 @@ export class TankGame {
     document.exitPointerLock?.()
     const time = this.victory?.time ?? Math.round((performance.now() - this.stats.start) / 1000)
     this.onEnd(win
-      ? { win: true, stats: { time, shots: this.stats.shots, hits: this.stats.hits, accuracy: this.stats.shots ? Math.round((this.stats.hits / this.stats.shots) * 100) : 0, hp: this.player.hp, map: this.theme } }
+      ? { win: true, stats: { time, shots: this.stats.shots, hits: this.stats.hits, accuracy: this.stats.shots ? Math.round((this.stats.hits / this.stats.shots) * 100) : 0, hp: this.player.hp, map: this.theme, bonus: this.bonus || 0 } }
       : { win: false })
   }
 
@@ -2020,7 +2041,10 @@ export class TankGame {
     for (const c of this.cars) {
       if (!c.alive) continue
       const dx = p.x - c.x, dz = p.z - c.z
-      if (dx * dx + dz * dz < (tank.radius + 1.5 * CAR_SCALE) ** 2) this.destroyCar(c)
+      if (dx * dx + dz * dz < (tank.radius + 1.5 * CAR_SCALE) ** 2) {
+        this.destroyCar(c)
+        if (tank === this.player) this.crushBonus(c)
+      }
     }
   }
 
@@ -2292,7 +2316,16 @@ export class TankGame {
   // freeze the battle and cut to the MG sight on the nearest incoming drone
   startDroneDefense(d) {
     d.engaged = true
-    this.droneMode = { d, t: 0 }
+    const tgt = this.player.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
+    const fwd = d.mesh.position.clone().sub(tgt).setY(0)
+    const r0 = Math.max(40, fwd.length())
+    fwd.normalize()
+    this.droneMode = {
+      d, t: 0, r0, fwd, side: new THREE.Vector3(fwd.z, 0, -fwd.x),
+      h0: Math.max(18, d.mesh.position.y - tgt.y),
+      ph: [Math.random() * 6.3, Math.random() * 6.3, Math.random() * 6.3],
+      cfg: DEF[this.theme] ?? DEF.city,
+    }
     this.player.zoom = false
     this.player.throttle = 0
     this.player.vel = 0
@@ -2305,6 +2338,7 @@ export class TankGame {
   }
 
   endDroneDefense() {
+    if (this.player.mesh.userData.gun) this.player.mesh.userData.gun.visible = true
     this.droneMode = null
     this.mgMouse = false
     this.camera.fov = this.mobile ? 59 : 56
@@ -2325,6 +2359,7 @@ export class TankGame {
     const aimDir = new THREE.Vector3(0, 0, 1).applyEuler(new THREE.Euler(p.pitch, p.yaw, 0, 'YXZ'))
     this.aimDir = aimDir
     const gun = p.mesh.userData.gun
+    if (gun) gun.visible = false   // cupola view: the main gun would sit across the sight line
     const eye = (gun ? gun.getWorldPosition(new THREE.Vector3()) : p.mesh.position.clone().add(new THREE.Vector3(0, 3.2, 0)))
       .addScaledVector(aimDir, 1.2).add(new THREE.Vector3(0, 0.5, 0))
     this.camera.position.copy(eye)
@@ -2342,19 +2377,24 @@ export class TankGame {
       if (m.t > (m.killT ??= m.t) + 0.9) this.endDroneDefense()
       return
     }
-    const target = p.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
-    const pos = d.mesh.position
-    const want = target.clone().sub(pos).setLength(DRONE_SPEED * DEF_SLOW)
-    d.vel.lerp(want, 1 - Math.exp(-4 * dt))
-    pos.addScaledVector(d.vel, dt)
-    d.mesh.lookAt(pos.clone().add(d.vel))
+    // scripted attack run: closes over cfg.T seconds while weaving side to side and
+    // bobbing — the weave fades out over the last ~40 m so the dive still connects
+    const c = m.cfg, target = p.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0))
+    const pos = d.mesh.position, prev = pos.clone()
+    const u = Math.min(1, m.t / c.T), r = m.r0 * (1 - u), fade = Math.min(1, r / 40), w = 2 * Math.PI * c.f
+    const lat = c.amp * fade * (Math.sin(w * m.t + m.ph[0]) * 0.75 + Math.sin(w * 2.3 * m.t + m.ph[1]) * 0.25)
+    const up = m.h0 * (1 - u) + c.v * fade * Math.sin(w * 0.7 * m.t + m.ph[2])
+    pos.copy(target).addScaledVector(m.fwd, r).addScaledVector(m.side, lat)
+    pos.y = Math.max(target.y + up, heightAt(pos.x, pos.z) + (r > 12 ? 3 : 0.5))
+    if (dt > 0) d.vel.subVectors(pos, prev).divideScalar(dt)
+    if (d.vel.lengthSq() > 1e-4) d.mesh.lookAt(pos.clone().add(d.vel))
     d.life += dt
     d.mesh.userData.light.visible = (d.life * 6) % 1 < 0.5
     const dist = pos.distanceTo(target)
-    this.droneWarn = { dist, defense: true, eta: dist / Math.max(1, DRONE_SPEED * DEF_SLOW) }
+    this.droneWarn = { dist, defense: true, eta: Math.max(0, c.T - m.t) }
     this._beepT -= dt
     if (this._beepT <= 0) { this.sfx?.beep(); this._beepT = 0.1 + 0.4 * dist / DRONE_ENGAGE }
-    if (dist < DRONE_HIT && !(p.respawnShield > 0)) {   // too slow: it rams home
+    if (m.t >= c.T && !(p.respawnShield > 0)) {   // too slow: it rams home
       this.destroyDrone(d, true)
       this.damagePlayer(this.ai.dmg, d.vel.clone().negate())
       this.endDroneDefense()

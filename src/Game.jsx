@@ -3,6 +3,20 @@ import { TankGame, RELOAD_TIME, MG_COOL } from './game/TankGame'
 import Minimap from './components/Minimap'
 import OptionsDialog from './components/OptionsDialog'
 
+// spent .50 BMG case flung out of the M2 receiver (pure DOM, removed when it lands)
+function ejectCase(wrap) {
+  if (!wrap || !wrap.animate) return
+  const c = document.createElement('i')
+  c.className = 'm2-case'
+  wrap.appendChild(c)
+  const dx = 90 + Math.random() * 110, up = 50 + Math.random() * 70, r = 360 + Math.random() * 720
+  c.animate([
+    { transform: 'translate(0, 0) rotate(0deg)' },
+    { transform: `translate(${dx * 0.55}px, ${-up}px) rotate(${r * 0.4}deg)`, offset: 0.3 },
+    { transform: `translate(${dx}px, 380px) rotate(${r}deg)` },
+  ], { duration: 650 + Math.random() * 250, easing: 'cubic-bezier(.3,0,.7,1)' }).onfinish = () => c.remove()
+}
+
 export default function Game({ onEnd, onExit, resumeCount, inactive, map, settings, onSettings, playClick }) {
   const mountRef = useRef(null)
   const gameRef = useRef(null)
@@ -15,6 +29,10 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
   const droneDistRef = useRef(null)
   const droneSightRef = useRef(null)
   const droneEtaRef = useRef(null)
+  const droneHeatRef = useRef(null)
+  const droneHeatLabelRef = useRef(null)
+  const m2Ref = useRef(null)
+  const m2FlashRef = useRef(null)
   const reticleRef = useRef(null)
   const crosshairRef = useRef(null)
   const scopeRef = useRef(null)
@@ -78,11 +96,23 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
   useEffect(() => {
     const game = new TankGame(mountRef.current, onHud, onEnd, map)
     gameRef.current = game
+    game.onPop = (x, y, text) => {
+      const wrap = mountRef.current?.parentElement
+      if (!wrap) return
+      const el = document.createElement('div')
+      el.className = 'score-pop'
+      el.textContent = text
+      el.style.left = `${x}px`
+      el.style.top = `${y}px`
+      el.addEventListener('animationend', () => el.remove())
+      wrap.appendChild(el)
+    }
     game.start()
     // the map-pick click is still a user gesture: lock the mouse right away so aiming works without an extra click
     if (!mobile) game.renderer.domElement.requestPointerLock()?.catch?.(() => {})
 
     let raf
+    const m2 = { shots: 0, at: -1e9, rot: 0 }
     const tick = () => {
       const g = gameRef.current
       if (g && g.player && reloadFillRef.current) {
@@ -99,8 +129,34 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
           const def = !!(w && w.defense)
           droneWarnRef.current.hidden = !w || def
           if (w && droneDistRef.current) droneDistRef.current.textContent = `${Math.round(w.dist)} m`
-          if (droneSightRef.current) droneSightRef.current.hidden = !def
+          if (droneSightRef.current) {
+            droneSightRef.current.hidden = !def
+            droneSightRef.current.parentElement?.classList.toggle('drone-mode', def)
+          }
           if (def && droneEtaRef.current) droneEtaRef.current.textContent = `${Math.round(w.dist)} m · ${w.eta.toFixed(1)}s`
+          if (def) {
+            const heat = g.player.mgHeat || 0, over = g.player.mgOver
+            if (droneHeatRef.current) {
+              droneHeatRef.current.style.width = `${heat * 100}%`
+              droneHeatRef.current.style.background = over ? '#e04434' : heat > 0.7 ? '#e0a03c' : '#e8ece2'
+            }
+            if (droneHeatLabelRef.current) droneHeatLabelRef.current.textContent = over ? `COOLDOWN ${(heat * MG_COOL).toFixed(1)}s` : heat > 0.01 ? `${Math.round(heat * 100)}%` : 'READY'
+          }
+          // M2 feedback: muzzle flash, recoil kick and a brass case per round
+          const now = performance.now(), shots = g.mgShots || 0, fresh = shots - m2.shots
+          m2.shots = shots
+          if (def && fresh > 0) {
+            m2.at = now
+            m2.rot = Math.random() * 90
+            for (let k = 0; k < Math.min(fresh, 3); k++) ejectCase(m2Ref.current)
+          }
+          const kick = def ? Math.max(0, 1 - (now - m2.at) / 90) : 0
+          if (m2Ref.current) m2Ref.current.style.transform = `translateX(-50%) translateY(${kick * 12}px) rotate(${(Math.random() - 0.5) * kick * 1.2}deg)`
+          if (m2FlashRef.current) {
+            const on = def && (fresh > 0 || now - m2.at < 50)
+            m2FlashRef.current.style.opacity = on ? '1' : '0'
+            if (on) m2FlashRef.current.style.transform = `translate(-50%, -50%) rotate(${m2.rot}deg) scale(${0.8 + Math.random() * 0.5})`
+          }
         }
         if (gearRef.current) {
           const v = g.player.vel || 0
@@ -265,17 +321,13 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
       <div ref={crosshairRef} className="crosshair">+</div>
       <div ref={reticleRef} className="reticle" />
       <div ref={droneSightRef} className="drone-sight" hidden aria-hidden="true">
-        <svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
-          <g fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="500" cy="500" r="150" /><circle cx="500" cy="500" r="300" strokeDasharray="14 22" />
-            <path d="M500 310v120 M500 570v120 M310 500h120 M570 500h120" />
-            {[-2, -1, 1, 2].map((n) => <path key={n} d={`M${500 + n * 75} 486v28 M486 ${500 + n * 75}h28`} />)}
-          </g>
-          <g fill="none" stroke="currentColor" strokeWidth="4">
-            <path d="M120 120h90 M120 120v90 M880 120h-90 M880 120v90 M120 880h90 M120 880v-90 M880 880h-90 M880 880v-90" />
-          </g>
-        </svg>
-        <div className="drone-sight-top">DRONE DEFENSE · MG <b ref={droneEtaRef}>0 m</b></div>
+        <div ref={m2Ref} className="m2-wrap">
+          <div ref={m2FlashRef} className="m2-flash" />
+          <img src={import.meta.env.BASE_URL + 'assets/m2.webp'} alt="" />
+        </div>
+        <div className="drone-heat"><span>M2 HEAT</span><i><b ref={droneHeatRef} /></i><em ref={droneHeatLabelRef}>READY</em></div>
+        
+        <div className="drone-sight-top">DRONE DEFENSE · M2 .50 <b ref={droneEtaRef}>0 m</b></div>
         <div className="drone-sight-hint">SPACE / LMB — shoot it down</div>
       </div>
       <div ref={droneWarnRef} className="drone-warn" role="alert" hidden>
@@ -299,6 +351,7 @@ export default function Game({ onEnd, onExit, resumeCount, inactive, map, settin
         <div className="hud-box"><span className="hud-label">AMMO</span><b>∞</b></div>
         {hud.apT > 0 && <div className="hud-box ap-badge"><span>AP ×2</span><b>{hud.apT}s</b></div>}
         <div className="hud-box"><span className="hud-label">KILLS</span><b>{hud.kills}/{hud.total}</b></div>
+        <div className="hud-box"><span className="hud-label">BONUS</span><b>{(hud.bonus || 0).toLocaleString()}</b></div>
         <div className="hud-box"><span className="hud-label">MAP</span><b style={{textTransform:'uppercase'}}>{hud.theme || '—'}</b></div>
         <div className="hud-box"><span className="hud-label">GEAR</span><b ref={gearRef} className="gear-val">N · 0 km/h</b></div>
         <div className="hud-box hint">M — MAP</div>

@@ -4,9 +4,9 @@ export const MAX_SCORES = 10    // rows on the TOP board
 const MAX_STORED = 500          // every win is kept so players outside the TOP 10 still get a rank
 export const NAME_MAX = 12
 
-// win bonus + remaining HP + accuracy + speed (bonus runs out after 5 minutes)
-export const calcScore = ({ hp = 0, accuracy = 0, time = 0 }) =>
-  3000 + hp * 20 + accuracy * 20 + Math.max(0, 300 - time) * 10
+// win bonus + remaining HP + accuracy + speed (bonus runs out after 5 minutes) + crushed wrecks
+export const calcScore = ({ hp = 0, accuracy = 0, time = 0, bonus = 0 }) =>
+  3000 + hp * 20 + accuracy * 20 + Math.max(0, 300 - time) * 10 + bonus
 
 const byRank = (a, b) => b.score - a.score || a.time - b.time || a.date - b.date
 

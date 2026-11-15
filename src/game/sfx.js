@@ -170,6 +170,21 @@ export class SoundFX {
     o.start(t); o.stop(t + 0.1)
   }
 
+  // score pickup: quick rising two-note chime
+  score() {
+    const t = this.ctx.currentTime
+    for (const [f, d] of [[880, 0], [1320, 0.07]]) {
+      const o = this.ctx.createOscillator()
+      o.type = 'triangle'; o.frequency.value = f
+      const g = this.ctx.createGain()
+      g.gain.setValueAtTime(0.0001, t + d)
+      g.gain.exponentialRampToValueAtTime(0.22, t + d + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.001, t + d + 0.18)
+      o.connect(g).connect(this.fx)
+      o.start(t + d); o.stop(t + d + 0.2)
+    }
+  }
+
   // tree fall: crackling down-sweep (throttled — tanks can fell many trees at once)
   treeFall() {
     const t = this.ctx.currentTime

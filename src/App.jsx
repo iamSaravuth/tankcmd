@@ -260,6 +260,7 @@ function WinScreen({ stats, onReplay, onMenu, onHiScores, onSaved }) {
         <div className="stat"><span>SHOTS FIRED</span><b>{stats.shots}</b></div>
         <div className="stat"><span>ACCURACY</span><b>{stats.accuracy}%</b></div>
         <div className="stat"><span>HITS</span><b>{stats.hits}</b></div>
+        <div className="stat"><span>WRECKS CRUSHED</span><b>+{(stats.bonus || 0).toLocaleString()}</b></div>
       </div>
       {!rank && (
         <form className="hs-form" onSubmit={save}>
