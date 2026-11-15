@@ -2241,8 +2241,8 @@ export class TankGame {
     for (const c of g.userData.parts) g.remove(c)
     g.scale.setScalar(1)
     g.add(this.droneProto.clone(true))
-    g.userData.light.position.set(0, 0.42, 0)
-    g.userData.light.scale.setScalar(0.7)
+    g.userData.light.position.set(0, -0.15, 1.1)
+    g.userData.light.scale.setScalar(0.45)
     g.userData.glb = true
   }
 
