@@ -29,7 +29,7 @@ const MOUSE_SENS = 0.0022, TOUCH_SENS = 0.0045
 const FIRE_BUFFER = 0.5
 // player drivetrain: automatic 3-speed box — top speed of each gear (fraction of
 // the tank's top speed) and its acceleration (m/s²); the power cuts briefly per shift
-const GEARS = [{ top: 0.3, acc: 2.34 }, { top: 0.62, acc: 1.76 }, { top: 1, acc: 1.17 }]
+const GEARS = [{ top: 0.4, acc: 3.2 }, { top: 0.62, acc: 1.76 }, { top: 1, acc: 1.17 }]
 const TOP_SPEED = 48 / 3.6 / SPEED // 48 km/h in 3rd
 const SPEED_UP = 1.35           // Speed-up airdrop: top speed + acceleration multiplier
 const REVERSE_TOP = 0.3, REVERSE_ACC = 2.5

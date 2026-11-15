@@ -14,6 +14,9 @@ const playClick = () => { const a = clickAudio.cloneNode(); a.volume = 0.55 * ch
 
 // three.js (~700 kB) only loads when a battle starts
 const Game = lazy(() => import('./Game'))
+// every battle after the first starts from a fresh page load (Windows Chrome loses the mouse otherwise)
+const AUTOSTART = 'tc-autostart'
+let battles = 0
 
 function MenuArt() {
   // war-torn cityscape + two facing tanks, blue-vs-fire sky — key-art style
@@ -318,11 +321,16 @@ function HiScoreScreen({ onBack, highlight }) {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState('menu') // menu | game | gameover | win
   const [stats, setStats] = useState({ time: 0, shots: 0, hits: 0, accuracy: 0 })
   const [gameKey, setGameKey] = useState(0)
   const [continues, setContinues] = useState(3)
-  const [map, setMap] = useState('random')
+  const [autostart] = useState(() => {
+    const m = sessionStorage.getItem(AUTOSTART)
+    sessionStorage.removeItem(AUTOSTART)
+    return m
+  })
+  const [map, setMap] = useState(autostart || 'random')
+  const [screen, setScreen] = useState(autostart ? 'deploy' : 'menu') // menu | deploy | game | gameover | win
   const [resumeCount, setResumeCount] = useState(0)
   const introRef = useRef(null)
   const [newScoreId, setNewScoreId] = useState(null)
@@ -373,6 +381,11 @@ export default function App() {
   }, [])
 
   const start = (m = map) => {
+    if (battles++ > 0) {
+      sessionStorage.setItem(AUTOSTART, m)
+      location.reload()
+      return
+    }
     trackPlay(m)
     setGameKey((key) => key + 1)
     setContinues(3)
@@ -401,6 +414,12 @@ export default function App() {
     <div className="app">
       <div className="rotate-device"><b>ROTATE YOUR DEVICE</b><p>หมุนเครื่องเป็นแนวนอนเพื่อเล่น</p></div>
       {screen === 'menu' && <StartScreen onStart={() => setScreen('mapselect')} onHiScores={() => { setNewScoreId(null); setScreen('hiscores') }} settings={settings} onSettings={updateSettings} />}
+      {screen === 'deploy' && (
+        <div className="screen menu deploy-screen" onClick={() => { playClick(); start(map) }}>
+          <p className="subtitle">{map.toUpperCase()}</p>
+          <button className="battle-btn" autoFocus>CLICK TO DEPLOY</button>
+        </div>
+      )}
       {screen === 'hiscores' && <HiScoreScreen onBack={toMenu} highlight={newScoreId} />}
       {screen === 'mapselect' && <MapSelect onPick={pickMap} onBack={toMenu} />}
       {(screen === 'game' || screen === 'gameover') && (
